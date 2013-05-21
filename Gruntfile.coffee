@@ -14,11 +14,19 @@ module.exports = (grunt) ->
                 src: "src/*.coffee"
                 dest: "build/"
                 ext: ".js"
+        watch:
+            scripts:
+                files: ['src/*.coffee']
+                tasks: ['coffee'],
+                options: {
+                    nospawn: true
+                }
     )
     
-    grunt.loadNpmTasks("grunt-contrib-uglify")
+    grunt.loadNpmTasks("grunt-contrib-uglify");
     grunt.loadNpmTasks('grunt-contrib-coffee');
+    grunt.loadNpmTasks("grunt-contrib-watch");
     
     #grunt.registerTask("default", ["coffee", "uglify"])
-    grunt.registerTask("default", ["coffee"])
+    grunt.registerTask("default", ["coffee", "watch"])
     
