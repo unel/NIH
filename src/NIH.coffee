@@ -28,6 +28,12 @@ class URLBasedResource
         @elem.remove()
         @load()
 
+    onload: (cb) ->
+        @elem.onload = ->
+            console.log("loaded", @elem)
+            cb()
+
+
 
 URLBasedResource::bind = (tag) ->
     return @ unless tag
@@ -83,11 +89,66 @@ class Storage
         else
             alert 'no'
 
+    onload: (rsName, cb) ->
+        rs = @resources[rsName]
+        if rs
+            rs.onload(cb)
+        else
+            alert 'no'
 
-s = new Storage "jq"
+
+
+
+
+class ScriptWrapper
+    constructor: (@window, @ignore) ->
+        @G = {}
+        for key,value of @window
+            @G[key] = value
+            delete @window[key]
+
+        @G.window = @G
+
+    difference: () ->
+        # get new data from window
+        _ = @G._
+        keys = _.difference(_.keys(@window), _.keys(@G))
+        data = _.pick(@window, keys)
+        return data
+
+    eval: (script) ->
+        # evaling script in G context and stole new variables from window
+        `debugger`
+        `
+        with (this.G) {
+            var r = eval(script);
+        }
+        `
+
+        data = @difference()
+        for key,value of data
+            @G[key] = value
+            delete @window[key] if key not in @ignore
+            console.log('new data:', key, value)
+
+        r
+
+
+
+
+window.s = s = new Storage "jq"
 s.addResource(new RScript("jquery", "http://code.jquery.com/jquery-1.9.1.min.js"))
-s.load('jquery')
-window.s = s
+s.addResource(new RScript("underscore", "/js/underscore.js"))
+s.addResource(new RStyle("NIHCSS", "/src/NIH.css"))
 s.addResource(new URLBasedResource('NIH').bind(document.getElementById('NIHJS')))
-s.addResource(new RStyle("NIHCSS", "src/NIH.css"));
-s.load('NIHCSS');
+s.addResource(new RScript("jquery-ui", "http://code.jquery.com/ui/1.10.3/jquery-ui.js"))
+
+s.load('jquery')
+s.load('NIHCSS')
+s.load('underscore')
+s.onload('underscore', ->
+    window.SW = new ScriptWrapper(window, ['SW']);
+);
+
+
+
