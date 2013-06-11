@@ -1,3 +1,12 @@
+# put vendor-prefixed methods to normal names
+methodNames = ['requestFileSystem', 'storageInfo']
+vendorPrefixes = ['webkit'];
+for methodName in methodNames
+    methodNameS = methodName[0].toUpperCase() + methodName.substring(1)
+    for vendorPrefix in vendorPrefixes
+        window[methodName] ?= window[vendorPrefix+methodNameS]
+
+
 class Resource
     constructor: (@name) ->
     load: -> ''
@@ -413,7 +422,109 @@ STORAGE = new Storage("jq", {
 });
 
 
+STORE = {
+    "save": (key, data) ->
+        window.localStorage.setItem(key, data)
+
+    "load": (key) ->
+        window.localStorage.getItem(key)
+};
+
+
+class FS
+    constructor: (size, cbS, cbE, cbF) ->
+        window.storageInfo.requestQuota(window.PERSISTENT, size*1024*1024,
+            (grantedBytes) =>
+                console.log('FS grantedBytes', grantedBytes)
+                window.requestFileSystem(window.PERSISTENT, grantedBytes,
+                    (fs) =>
+                        console.log('FS initialized', fs)
+                        @fs = fs
+                        safeCall(cbS, @)
+                        safeCall(cbF, @)
+
+                    (fe) =>
+                        console.error('FS init error', fe)
+                        safeCall(cbE, fe)
+                        safeCall(cbF, @)
+                )
+
+            (fe) =>
+                console.error('FS init error', fe)
+                safeCall(cbE, fe)
+                safeCall(cbF, @)
+        )
+
+    mkDir: (parent, dirName, cbS, cbE, cbF) ->
+        parent.getDirectory(dirName, {"create": true},
+            (dirEntry) =>
+                console.log("Dir entry created (or exists)", dirEntry)
+                safeCall(cbS, dirEntry)
+                safeCall(cbF, dirEntry)
+            (fe) =>
+                console.log("Dir creating error", fe)
+                safeCall(cbE, fe)
+                safeCall(cbF, fe)
+        )
+
+    mkDirs: (parent, path, cbS, cbE, cbF) ->
+        if !TYPES.isArray(path)
+            path = path.split('/')
+        if path[0] == '' || path[0] == '.'
+            path = path.slice(1)
+
+        dirName = path.shift()
+        parent ?= @fs.root
+
+        @mkDir(parent, dirName,
+            (dirEntry) =>
+                if path.length == 0
+                    safeCall(cbS, dirEntry)
+                    safeCall(cbF, dirEntry)
+                else
+                    @mkDirs(dirEntry, path, cbS, cbE, cbF)
+            cbE, cbF
+        )
+
+
+    mkFile: (path, cbS, cbE, cbF) ->
+        if !TYPES.isArray(path)
+            path = path.split('/')
+        if path[0] == '' || path[0] == '.'
+            path = path.slice(1)
+
+        fileName = path.pop()
+
+        @mkDirs(undefined, path,
+            (dirEntry) =>
+                dirEntry.getFile(fileName, {"create": true, "exclusive": true},
+                    (fileEntry) =>
+                        console.log("File created", fileEntry)
+                        safeCall(cbS, fileEntry)
+                        safeCall(cbF, fileEntry)
+                    cbE, cbF
+                )
+            cbE, cbF)
+
+
+    errorHandler: (fe) ->
+        #
+
+
+
+
 window.NIH = {
     "AJAX": AJAX,
-    "STORAGE": STORAGE
+    "STORAGE": STORAGE,
+    "STORE": STORE,
+    "FS": new FS(1024,
+        (fs) ->
+            fs.mkFile("/a/b/c/d/e.txt",
+                (fileEntry) ->
+                    console.log('!!!', fileEntry)
+
+                (fe) ->
+                    console.error("=(", fe)
+            )
+    )
 };
