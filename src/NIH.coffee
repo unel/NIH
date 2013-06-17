@@ -391,10 +391,33 @@ AJAX.JL = (urls_data, coptions) ->
 
 
 TYPES = {
+    types: {}
     isArray: (obj) -> obj instanceof Array
     isFunction: (obj) -> obj instanceof Function
+    likeNumber: (v) -> v? && /^\s*[-+]?\d+(\.\d+)?\s*$/.test(v)
+    type: (v) ->
+        res = null
+        if !res && v.constructor
+            res = v.constructor.name
+
+        if !res && v.prototype
+            res = v.prototype.constructor.name
+
+        if !res
+            for name,t of TYPES.types
+                if v instanceof t
+                    res = t
+                    break
+
+
+
+        return res
+
+
 }
 
+for name,t of window
+    TYPES.types[name] = t if t && t.prototype && TYPES.isFunction(t.constructor)
 
 STORAGE = new Storage("jq", {
     "scripts": {
@@ -507,6 +530,167 @@ class FS
             cbE, cbF)
 
 
+    _rmFileFE: (fileEntry, cbS, cbE, cbF) ->
+        fileEntry.remove(
+            =>
+                safeCall(cbS)
+                safeCall(cbF)
+            (fe) =>
+                safeCall(cbE, fe)
+                safeCall(cbF, fe)
+        )
+
+    _rmFileP: (path, cbS, cbE, cbF) ->
+        @fs.root.getFile(path, {"create": false}
+            (fileEntry) =>
+                @_rmFileFE(fileEntry, cbS, cbE, cbF)
+
+            (fe) =>
+                safeCall(cbE, fe)
+                safeCall(cbF, fe)
+        )
+
+    rmFile: (f, cbS, cbE, cbF) ->
+        @[{
+            "FileEntry": "_rmFileFE"
+            "String": "_rmFileP"
+        }[TYPES.type(f)]](f, cbS, cbE, cbF)
+
+
+
+    open: (path, cbS, cbE, cbF) ->
+        @fs.root.getFile(path, {"create": false},
+            (fileEntry) =>
+                safeCall(cbS, fileEntry)
+                safeCall(cbF, fileEntry)
+            (fe) ->
+                safeCall(cbE, fe)
+                safeCall(cbF, fe)
+        )
+
+    _writeFW: (fileWriter, opt, cbS, cbE, cbF) ->
+        fileWriter.onwriteend = (e) =>
+            safeCall(cbS, e)
+            safeCall(cbF, e)
+
+        fileWriter.onerror = (fe) =>
+            safeCall(cbE, fe)
+            safeCall(cbF, fe)
+
+
+        if opt.position
+            fileEnd = fileWriter.length
+            pos = opt.position
+
+            if TYPES.likeNumber(pos)
+                if pos < 0
+                    pos = fileEnd + pos
+            else
+                [label, delta] = pos.split(/[-+]/)
+                positions = {
+                    "end": fileEnd
+                    "start": 0
+                    "unknown": 0
+                }
+                pos = positions[label] ? positions.unknown
+                if TYPES.likeNumber(delta)
+                    pos += delta
+
+            pos  = switch
+                when pos < 0 then 0
+                when pos > fileEnd then fileEnd
+                else pos
+
+            fileWriter.seek(pos)
+
+        fileWriter.write(opt.data)
+
+    _writeFE: (fileEntry, opt, cbS, cbE, cbF) ->
+        writer = fileEntry.createWriter(
+            (fileWriter) =>
+                @_writeFW(fileWriter, opt, cbS, cbE, cbF)
+
+            (fe) =>
+                safeCall(cbE, fe)
+                safeCall(cbF, fe)
+        )
+
+    _writeP: (path, opt, cbS, cbE, cbF) ->
+        @open(path,
+            (fileEntry) =>
+                @_writeFE(fileWriter, opt, cbS, cbE, cbF)
+            cbE, cbF
+        )
+
+    write: (to, opt, cbS, cbE, cbF) ->
+        writeMethods = {
+            "String": "_writeP"
+            "FileEntry": "_writeFE"
+            "FileWriter": "_writeFE"
+        }
+
+        writeMethod = writeMethods[TYPES.type(to)]
+        return safeCall(cbE, "incorrect object for write") unless writeMethod
+
+        @[writeMethod](to, opt, cbS, cbE, cbF)
+
+
+
+
+    _readF: (file, opt, cbS, cbE, cbF) ->
+        reader = new FileReader()
+        reader.onloadend = (e) ->
+            safeCall(cbS, this.result, e)
+            safeCall(cbF, this.result, e)
+
+        reader.onerror = (fe) ->
+            safeCall(cbE, fe)
+            safeCall(cbF, fe)
+
+        reader[opt.method || 'readAsText'](file)
+
+    _readFE: (fileEntry, opt, cbS, cbE, cbF) ->
+        fileEntry.file(
+            (file) =>
+                @_readF(file, opt, cbS, cbE, cbF)
+
+            (fe) =>
+                safeCall(cbE, fe)
+                safeCall(cbF, fe)
+        )
+
+    _readP: (path, opt, cbS, cbE, cbF) ->
+        @open(path,
+            (fileEntry) =>
+                @_readFE(fileEntry, opt, cbS, cbE, cbF)
+            cbE, cbF
+        )
+
+    read: (from, opt, cbS, cbE, cbF) ->
+        @[{
+            "String": "_readP"
+            "FileEntry": "_readFE"
+            "File": "_readF"
+        }[TYPES.type(from)]](from, opt, cbS, cbE, cbF)
+
+
+    _dirDR: (dirReader, cbS, cbE, cbF) ->
+        #
+
+    _dirDE: (dirEntry, cbS, cbE, cbF) ->
+        #
+
+    _dirP: (path, cbS, cbE, cbF) ->
+        #
+
+    dir: (d, cbS, cbE, cbF) ->
+        @[{
+            "String": "_dirP"
+            "DirectoryEntry": "_dirDE"
+            "DirectoryReader": "_dirDR"
+        }[TYPES.type(d)]](d, cbS, cbE, cbF)
+
+
     errorHandler: (fe) ->
         #
 
@@ -517,14 +701,40 @@ window.NIH = {
     "AJAX": AJAX,
     "STORAGE": STORAGE,
     "STORE": STORE,
+    "T": TYPES,
     "FS": new FS(1024,
         (fs) ->
             fs.mkFile("/a/b/c/d/e.txt",
                 (fileEntry) ->
-                    console.log('!!!', fileEntry)
+                    console.log('created', fileEntry, TYPES.type(fileEntry), fileEntry.toString())
+                    fs.write(fileEntry, {
+                        "data": new Blob(["Hello, world"], {"type": "text/plain"})
+                    },
+                    ->
+                        fs.write(fileEntry, {
+                            "position": "end-2"
+                            "data": new Blob(["Hello, world"], {"type": "text/plain"})
+                        },
+                        ->
+                            fs.read('/a/b/c/d/e.txt', {
+                                },
+                                (data, evt) -> console.log("read done", data, evt)
+                                (fe) -> console.error('read err', fe)
+                            )
+                        )
+                    )
+
+
 
                 (fe) ->
-                    console.error("=(", fe)
+                    console.error("mk error", fe)
+            )
+
+            fs.rmFile("/a/b/c/d/e.txt",
+                ->
+                    console.log('removed')
+                (fe) ->
+                    console.error('rm error', fe)
             )
     )
 };
