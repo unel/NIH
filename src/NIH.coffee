@@ -458,22 +458,22 @@ class FS
     constructor: (size, cbS, cbE, cbF) ->
         window.storageInfo.requestQuota(window.PERSISTENT, size*1024*1024,
             (grantedBytes) =>
-                console.log('FS grantedBytes', grantedBytes)
+                # console.log('FS grantedBytes', grantedBytes)
                 window.requestFileSystem(window.PERSISTENT, grantedBytes,
                     (fs) =>
-                        console.log('FS initialized', fs)
+                        # console.log('FS initialized', fs)
                         @fs = fs
                         safeCall(cbS, @)
                         safeCall(cbF, @)
 
                     (fe) =>
-                        console.error('FS init error', fe)
+                        # console.error('FS init error', fe)
                         safeCall(cbE, fe)
                         safeCall(cbF, @)
                 )
 
             (fe) =>
-                console.error('FS init error', fe)
+                # console.error('FS init error', fe)
                 safeCall(cbE, fe)
                 safeCall(cbF, @)
         )
@@ -481,11 +481,11 @@ class FS
     mkDir: (parent, dirName, cbS, cbE, cbF) ->
         parent.getDirectory(dirName, {"create": true},
             (dirEntry) =>
-                console.log("Dir entry created (or exists)", dirEntry)
+                # console.log("Dir entry created (or exists)", dirEntry)
                 safeCall(cbS, dirEntry)
                 safeCall(cbF, dirEntry)
             (fe) =>
-                console.log("Dir creating error", fe)
+                # console.log("Dir creating error", fe)
                 safeCall(cbE, fe)
                 safeCall(cbF, fe)
         )
@@ -522,7 +522,7 @@ class FS
             (dirEntry) =>
                 dirEntry.getFile(fileName, {"create": true, "exclusive": true},
                     (fileEntry) =>
-                        console.log("File created", fileEntry)
+                        # console.log("File created", fileEntry)
                         safeCall(cbS, fileEntry)
                         safeCall(cbF, fileEntry)
                     cbE, cbF
@@ -647,7 +647,7 @@ class FS
             safeCall(cbE, fe)
             safeCall(cbF, fe)
 
-        reader[opt.method || 'readAsText'](file)
+        reader[opt.method || 'readAsText'](file) # readAs{Text,DataURL,ArrayBuffer}
 
     _readFE: (fileEntry, opt, cbS, cbE, cbF) ->
         fileEntry.file(
@@ -696,17 +696,83 @@ class FS
 
 
 
+class Messaging
+    constructor: ->
+        @mkWorker()
+
+    mkWorker: ->
+        @worker = new SharedWorker('/js/msg_worker.js')
+        @worker.port.addEventListener('message'
+            (evt) =>
+                data = evt.data
+                @processMessage(data.message, data.data)
+            false
+        )
+
+        @worker.port.start()
+        @messageListeners = {}
+        window.addEventListener('beforeunload', => @killWorker())
+
+
+    killWorker: ->
+        @sysmsg("exit")
+
+    sysmsg: (message, data) ->
+        @worker.port.postMessage({
+            "id": 123
+            "message": message
+            "data": data
+        })
+
+    msg: (windowID, message, data) ->
+        @sysmsg("message_to", {
+            "to": windowID
+            "message": message
+            "data": data
+        })
+
+    register: (id) ->
+        @sysmsg("register", id)
+
+    processMessage: (message, data) ->
+        console.log('message accepted', message, data)
+        messageListeners = @messageListeners[message] || {}
+        for key,listener of messageListeners
+            @notify(listener, data)
+
+    notify: (listener, data) ->
+        safeCall(listener, @, data)
+
+    subscribe: (message, key, proc) ->
+        @messageListeners[message] ||= {}
+        @messageListeners[message][key] = proc
+
+    unsubscribe: (message, key) ->
+        delete @messageListeners[message][key] if @messageListeners[message]
+
+
+MSG = new Messaging()
+MSG.subscribe("new_window", "nw", (MSG, data) ->
+    console.log("new window registered", data)
+)
+
+MSG.subscribe("msg_core_exit", "nw", (MSG, data) ->
+    MSG.mkWorker()
+)
+
+MSG.sysmsg("register", Math.random())
 
 window.NIH = {
     "AJAX": AJAX,
     "STORAGE": STORAGE,
     "STORE": STORE,
     "T": TYPES,
+    "MSG": MSG,
     "FS": new FS(1024,
         (fs) ->
             fs.mkFile("/a/b/c/d/e.txt",
                 (fileEntry) ->
-                    console.log('created', fileEntry, TYPES.type(fileEntry), fileEntry.toString())
+                    # console.log('created', fileEntry, TYPES.type(fileEntry), fileEntry.toString())
                     fs.write(fileEntry, {
                         "data": new Blob(["Hello, world"], {"type": "text/plain"})
                     },
@@ -718,7 +784,8 @@ window.NIH = {
                         ->
                             fs.read('/a/b/c/d/e.txt', {
                                 },
-                                (data, evt) -> console.log("read done", data, evt)
+                                (data, evt) ->
+                                    # console.log("read done", data, evt)
                                 (fe) -> console.error('read err', fe)
                             )
                         )
@@ -732,7 +799,7 @@ window.NIH = {
 
             fs.rmFile("/a/b/c/d/e.txt",
                 ->
-                    console.log('removed')
+                    # console.log('removed')
                 (fe) ->
                     console.error('rm error', fe)
             )
