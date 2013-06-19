@@ -10,13 +10,13 @@ module.exports = (grunt) ->
         coffee:
             compile:
                 expand: true
-                flatten: true
-                src: "src/*.coffee"
+                flatten: false
+                src: "src/**/*.coffee"
                 dest: "build/"
                 ext: ".js"
         watch:
             scripts:
-                files: ['src/*.coffee']
+                files: ['src/**/*.coffee']
                 tasks: ['coffee'],
                 options: {
                     nospawn: true

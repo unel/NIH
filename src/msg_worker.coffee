@@ -1,7 +1,21 @@
 connections = []
 windows = []
 
+msg = (port, message, data) ->
+	port.postMessage({
+		"id": 456
+		"message": message
+		"data": data
+	})
+
+notifyAll = (message, data) ->
+	for port in connections
+		msg(port, message, data)
+
 messageProcessors =
+	"get_id": (port, suffix) ->
+		msg(port, "gen_id", genID(suffix))
+
 	"register": (port, id) ->
 		windows[id] = port
 		notifyAll("new_window", id)
@@ -9,7 +23,6 @@ messageProcessors =
 	"exit": (port, id) ->
 		self.close()
 		notifyAll("msg_core_exit")
-
 
 	"message_to": (port, info) ->
 		windowID = info.to
@@ -50,17 +63,16 @@ self.addEventListener('connect',
 )
 
 
+# utils
 
+genID = (
+	->
+		IDS = {}
+		(suffix) ->
+			suffix ||= ""
+			id = IDS[suffix] || 0
 
+			IDS[suffix] = id+1;
 
-
-msg = (port, message, data) ->
-	port.postMessage({
-		"id": 456
-		"message": message
-		"data": data
-	})
-
-notifyAll = (message, data) ->
-	for port in connections
-		msg(port, message, data)
+			return suffix+id;
+)()
