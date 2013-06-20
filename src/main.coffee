@@ -18,10 +18,30 @@ storage = new A.RS.Storage("jquery"
 
 A.RS.rqDo(storage,
     ['jquery-ui', 'naked-ass']
-    ($, imageURL) -> img = $("<div><img src='#{imageURL}'></div>").dialog({width: "auto"})
+    ($, imageURL) -> # $("<div><img src='#{imageURL}'></div>").dialog({width: "auto"})
 )
 
 A.RS.rqDo(storage,
     ['naked-ass', 'jquery']
     (imageURL, $) -> $('<img>', {src: imageURL}).appendTo('body')
+)
+
+
+storage.addResource(new A.RS.ExternalScript("jquery-e",
+                                            "//ajax.googleapis.com/ajax/libs/jquery/1.10.1/jquery.min.js",
+                                            {"export": ["jQuery"]}))
+
+storage.addResource(new A.RS.ExternalScript("jquery-ui-e",
+                                            "//ajax.googleapis.com/ajax/libs/jqueryui/1.10.3/jquery-ui.min.js",
+                                            {
+                                                "export": ["jQuery"],
+                                                "require": ["jquery-e:jQuery"]
+                                            }))
+
+A.RS.rqDo(storage,
+    ['jquery-ui-e', 'naked-ass']
+    ($, u) ->
+
+        x = $("<div id='2'><img src='#{u}'></div>")
+        x.dialog({"modal": true})
 )

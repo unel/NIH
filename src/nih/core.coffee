@@ -41,6 +41,17 @@ UTILS =
 
         return obj
 
+######## TAGS ########
+TAGS = {}
+TAGS.mkTag = (tagName, attribs={}, style={}) ->
+    tag = document.createElement tagName
+    for name,value of attribs
+        tag.setAttribute(name, value)
+
+    for name,value of style
+        tag.style[name] = value
+
+    return tag
 
 
 ######## AJAX ########
@@ -138,7 +149,8 @@ class RS.URLBasedResource extends RS.Resource
             UTILS.safeCall(cbE, @)
             UTILS.safeCall(cbF, @)
 
-        cont = document.getElementsByTagName('body')[0] or document.getElementsByTagName('head')[0]
+        cont = document.getElementsByTagName('body')[0] \
+            or document.getElementsByTagName('head')[0]
         cont.appendChild(@elem)
 
     reload: ->
@@ -213,13 +225,79 @@ class RS.Script extends RS.Resource
 
         @module.init()
         @initialized = true
-
 RS.Script.FromJSModule = (name, module, opt) ->
     rs = new RS.Script(name, "", opt)
     rs.module = module
     rs.module.code = "1"
 
     return rs
+
+class RS.ExternalScript extends RS.Script
+    constructor: (@name, @url, @opt={}) ->
+
+        @frName = @name + "_ifr"
+        @ifr = TAGS.mkTag("iframe", {
+            "id": @frName
+            "name": @frName
+            "src": "about:blank"
+        });
+
+        @ifr.onload = =>
+            @window = @ifr.contentWindow
+            @document = @window.document
+
+
+            @window.window = window
+            @window.document = window.document
+
+            @module = new JS.Module(@name, {}, {window: @window})
+            @module.code = 0
+
+            @tag = TAGS.mkTag('script', {"src": @url})
+
+        document.getElementsByTagName('head')[0].appendChild(@ifr)
+
+    import: (module, vars) ->
+        for varName in vars
+            @window[varName] = @module.Globals[varName] = module.Globals[varName]
+
+    load: (cbS, cbE, cbF) ->
+        if @module.code
+            UTILS.safeCall(cbS, @)
+            UTILS.safeCall(cbF, @)
+            return
+
+        # 1. import requirements to iframe window
+        # 2. add script tag
+        # 3. absorbe
+        rqsInfo = @opt.require || []
+
+        rqsInfo = (rqInfo.split(':') for rqInfo in rqsInfo)
+        rqNames = (rqName for [rqName,rqVars] in rqsInfo)
+
+        @storage.load(rqNames,
+            (resources) =>
+                for [rsName,rsVars] in rqsInfo when TYPES.is(resources[rsName], "Script")\
+                                                 or TYPES.is(resources[rsName], "ExternalScript")
+                    resources[rsName].init()
+                    @import(resources[rsName].module, rsVars.split(';'))
+
+                @tag.onload = =>
+                    @module._postAbsorbe()
+                    UTILS.safeCall(cbS, @)
+                    UTILS.safeCall(cbF, @)
+
+                @tag.onerror = =>
+                    UTILS.safeCall(cbE, @)
+                    UTILS.safeCall(cbF, @)
+
+                @module._preAbsorbe()
+                @document.getElementsByTagName('head')[0].appendChild(@tag)
+
+            cbE, cbF
+        )
+
+    init: -> # pass
 
 class RS.Storage
     constructor: (@name, resourcesInfo) ->
@@ -325,11 +403,28 @@ RS.rqDo = (storage, rsNames, f) ->
 JS = {}
 class JS.Module
     constructor: (@name, @Globals, @opt) ->
+        @Globals ?= {}
         @code = 1
+        @opt ?= {}
+        @window = opt.window || window
 
     import: (module, vars) ->
         for varName in vars
             @Globals[varName] = module.Globals[varName]
+
+    _preAbsorbe: ->
+        @oldKeys = {}
+        @oldKeys[key] = value for key,value of @window
+
+    _postAbsorbe: ->
+        for key,value of @window when !@oldKeys.hasOwnProperty(key)
+            @Globals[key] = value
+            delete @window[key] if key not in ['A'] # FIXIT
+
+    absorbe: (f) ->
+        @_preAbsorbe()
+        UTILS.safeCall(f)
+        @_postAbsorbe()
 
 class JS.LoadableModule extends JS.Module
     constructor: (@name, @url, @opt) ->
@@ -355,18 +450,11 @@ class JS.LoadableModule extends JS.Module
                 UTILS.safeCall(cbF)
         })
 
-    absorbe: (f) ->
-        oldKeys = {}
-        oldKeys[key] = value for key,value of @window
-
-        UTILS.safeCall(f)
-
-        for key,value of @window when !oldKeys.hasOwnProperty(key)
-            @Globals[key] = value
-            delete @window[key] if key not in ['A'] # FIXIT
 
 
-    init: () -> @do(@code)
+
+
+    init: -> @do(@code)
 
     do: (code) ->
         ret = null
