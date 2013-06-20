@@ -1,30 +1,24 @@
-TYPES = {
-    types: {}
-    isArray: (obj) -> obj instanceof Array
-    isFunction: (obj) -> obj instanceof Function
+######## TYPES ########
+TYPES =
     likeNumber: (v) -> v? && /^\s*[-+]?\d+(\.\d+)?\s*$/.test(v)
     is: (obj, t) -> TYPES.type(obj) is t
     type: (v) ->
         res = null
+        return if typeof(v) is "undefined"
         if !res && v.constructor
             res = v.constructor.name
 
         if !res && v.prototype
             res = v.prototype.constructor.name
 
-        if !res
-            for name,t of TYPES.types
-                if v instanceof t
-                    res = t
-                    break
-
         return res
-}
-for name,t of window
-    TYPES.types[name] = t if t && t.prototype && TYPES.isFunction(t.constructor)
 
+for typeName in ["Array", "Function"]
+    ((TYPES, typeName) ->
+        TYPES["is"+typeName] = (obj) -> TYPES.is(obj, typeName)
+    )(TYPES, typeName)
 
-UTILS = {
+UTILS =
     safeCall: (f, args...) ->
         if TYPES.isFunction(f)
             f.apply(window, args)
@@ -36,7 +30,7 @@ UTILS = {
     getField: (obj, path) ->
         return unless path
         ret = obj
-        unless TYPES.is(path, "Array")
+        unless TYPES.isArray(path)
             path = path.split(".")
 
         for field in path
@@ -46,9 +40,10 @@ UTILS = {
                 return
 
         return obj
-}
 
 
+
+######## AJAX ########
 AJAX = {};
 AJAX.J = (url, options) ->
     options ?= {}
@@ -90,15 +85,23 @@ for HTTP_METHOD in ["HEAD", "GET", "PUT", "POST", "DELETE"]
 
 
 
+
+######## RESOURCES ########
 RS = {}
 class RS.Resource
     constructor: (@name) ->
     load: -> ''
     rqdata: -> ''
     requirements: ->
-        rqNames = @opt.require || []
-        resources = (@storage.resources[rsName] || throw "no req #{rsName}"\
-                     for rsName in rqNames)
+        rqsInfo = @opt.require || []
+        res = []
+        for rqInfo in rqsInfo
+            [rsName,rsVars] = rqInfo.split(':')
+            rsVars = rsVars.split(';') if rsVars
+            rs = @storage.resources[rsName] || throw "no req #{rsName}"
+            res.push([rs, rsVars])
+
+        return res
 
 class RS.URLBasedResource extends RS.Resource
     constructor: (@name, @_url) ->
@@ -204,15 +207,11 @@ class RS.Script extends RS.Resource
     init: ->
         return if @initialized
 
-        resources = @requirements()
-        ectx = {}
-        for rs in resources when TYPES.is(rs, "Script")
-            rs.init()
-            for varName in rs.opt.export
-                ectx[varName] = rs.module.Globals[varName]
+        rqsInfo = @requirements()
+        for [rs,rsVars] in rqsInfo when TYPES.is(rs, "Script")
+            @module.import(rs.module, rsVars)
 
-        @module.init(ectx)
-
+        @module.init()
         @initialized = true
 
 RS.Script.FromJSModule = (name, module, opt) ->
@@ -277,17 +276,18 @@ class RS.Storage
         while(names.length)
             rsName = names.shift()
             unless seen[rsName]
-                rsRequirements = UTILS.getField(@resources, "#{rsName}.opt.require") || []
+                rsRequirements = (rqInfo.split(':')[0] for rqInfo in UTILS.getField(@resources, "#{rsName}.opt.require") || [])
                 names = rsRequirements.concat(names)
                 requirements.unshift(rsName)
                 seen[rsName] = 1
 
+
         return requirements
 
     load: (rsNames, cbS, cbE, cbF) ->
-        rsNames = [rsNames] unless TYPES.is(rsNames, "Array")
+        rsNames = [rsNames] unless TYPES.isArray(rsNames)
         rqNames = @getRequirements(rsNames)
-        console.log('reqs', rqNames)
+
         resources = {}
         errors_cnt = 0
         success_cnt = 0
@@ -308,7 +308,7 @@ class RS.Storage
             )
 
 RS.rqDo = (storage, rsNames, f) ->
-    rsNames = [rsNames] unless TYPES.is(rsNames, "Array")
+    rsNames = [rsNames] unless TYPES.isArray(rsNames)
     storage.load(rsNames,
         (resources) ->
             for rsName in rsNames when TYPES.is(resources[rsName], "Script")
@@ -320,11 +320,16 @@ RS.rqDo = (storage, rsNames, f) ->
         -> throw "error"
     )
 
-JS = {}
 
+######## JS? ########
+JS = {}
 class JS.Module
     constructor: (@name, @Globals, @opt) ->
         @code = 1
+
+    import: (module, vars) ->
+        for varName in vars
+            @Globals[varName] = module.Globals[varName]
 
 class JS.LoadableModule extends JS.Module
     constructor: (@name, @url, @opt) ->
@@ -350,32 +355,25 @@ class JS.LoadableModule extends JS.Module
                 UTILS.safeCall(cbF)
         })
 
-    absorbe: (ectx,f) ->
+    absorbe: (f) ->
         oldKeys = {}
         oldKeys[key] = value for key,value of @window
 
         UTILS.safeCall(f)
 
-        for key,value of @window
-            if !oldKeys.hasOwnProperty(key)
-                @Globals[key] = value
-                delete @window[key] if key not in ['A'] # FIXIT
-
-        for key,value of ectx
-            if !oldKeys.hasOwnProperty(key)
-                @Globals[key] = value
+        for key,value of @window when !oldKeys.hasOwnProperty(key)
+            @Globals[key] = value
+            delete @window[key] if key not in ['A'] # FIXIT
 
 
-    init: (ectx) -> @do(ectx, @code)
+    init: () -> @do(@code)
 
-    do: (ectx, code) ->
+    do: (code) ->
         ret = null
         _this = this
         @absorbe(
-            ectx,
             `
             function(){
-            with(ectx){
             with(_this.Globals){
                 try{
                     ret = eval(code);
@@ -385,12 +383,15 @@ class JS.LoadableModule extends JS.Module
 
                 }
             }
-            }
             }`
         )
 
         return ret
 
+
+
+
+######## "EXPORT" SECTION ########
 window.A = A = {
     RS: RS
     T: TYPES

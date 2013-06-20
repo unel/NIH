@@ -3,7 +3,7 @@ storage = new A.RS.Storage("jquery"
         "jquery":     ["/js/jquery-1.9.1.min.js", {"export": ["jQuery"]}],
         "jquery-ui":  ["/js/jquery-ui.js", {
             "export": ["jQuery"],
-            "require": ["jquery", "jquery-ui-stylesheet"]
+            "require": ["jquery:jQuery", "jquery-ui-stylesheet"]
         }],
         "underscore": ["/js/underscore.js", {"export": ["_"]}],
 
