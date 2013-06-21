@@ -13,19 +13,16 @@ TYPES =
 
         return res
 
-for typeName in ["Array", "Function"]
+for typeName in ["Array", "Function", "Boolean"]
     ((TYPES, typeName) ->
         TYPES["is"+typeName] = (obj) -> TYPES.is(obj, typeName)
     )(TYPES, typeName)
 
 UTILS =
-    safeCall: (f, args...) ->
-        if TYPES.isFunction(f)
-            f.apply(window, args)
+    safeCallCtx: (f, ctx, args...) -> f.apply(ctx, args) if TYPES.isFunction(f)
+    safeCall: (f, args...) -> f.apply(window, args) if TYPES.isFunction(f)
+    safeApply: (f, args) -> f.apply(window, args) if TYPES.isFunction(f)
 
-    safeApply: (f, args) ->
-        if TYPES.isFunction(f)
-            f.apply(window, args)
 
     getField: (obj, path) ->
         return unless path
@@ -34,19 +31,22 @@ UTILS =
             path = path.split(".")
 
         for field in path
-            if obj && obj.hasOwnProperty(field)
-                obj = obj[field]
+            if ret && TYPES.type(ret[field]) isnt "undefined"
+                ret = ret[field]
             else
                 return
 
-        return obj
+        return ret
 
 ######## TAGS ########
 TAGS = {}
 TAGS.mkTag = (tagName, attribs={}, style={}) ->
     tag = document.createElement tagName
     for name,value of attribs
-        tag.setAttribute(name, value)
+        if TYPES.isBoolean(value) && value
+            tag.setAttribute(name, "")
+        else
+            tag.setAttribute(name, value)
 
     for name,value of style
         tag.style[name] = value
@@ -64,10 +64,10 @@ AJAX.J = (url, options) ->
     XHR.open(options.method, url, options.async)
 
     cbsByState = {
-        "2": options.onDataSend,
-        "3": options.onDataRecieve,
-        "4": options.onDataLoad,
-        "4/200": [options.onSuccess, options.onFinish],
+        "2": options.onDataSend
+        "3": options.onDataRecieve
+        "4": options.onDataLoad
+        "4/200": [options.onSuccess, options.onFinish]
         "4/else": [options.onError, options.onFinish]
     }
 
@@ -113,8 +113,9 @@ class RS.Resource
             res.push([rs, rsVars])
 
         return res
+RS.Resource.fromCache = ->
 
-class RS.URLBasedResource extends RS.Resource
+class RS.TagBasedResource extends RS.Resource
     constructor: (@name, @_url) ->
     url: ->
         return @_url
@@ -176,12 +177,12 @@ class RS.URLBasedResource extends RS.Resource
 
         return @
 
-class RS.Image extends RS.URLBasedResource
+class RS.Image extends RS.TagBasedResource
     constructor: (@name, @_url) ->
         @tagName = 'IMG'
         @attrName = 'src'
 
-class RS.Style extends RS.URLBasedResource
+class RS.Style extends RS.TagBasedResource
     constructor: (@name, @_url) ->
         @tagName = 'LINK'
         @attrName = 'href'
@@ -193,6 +194,14 @@ class RS.Script extends RS.Resource
         @opt ?= {}
         @module = new JS.LoadableModule(@name, @url)
 
+    cacheData: ->
+        return {
+            "rsClass": "Script"
+            "name": @name
+            "opt": @opt
+            "code": @module.code
+        }
+
     data: ->
         return undefined unless @opt.export
         if @opt.export.length > 1
@@ -202,6 +211,8 @@ class RS.Script extends RS.Resource
 
         else if @opt.export.length == 1
             ret = @module.Globals[@opt.export[0]]
+
+        return ret
 
     load: (cbS, cbE, cbF) ->
         if @module.code
@@ -225,37 +236,29 @@ class RS.Script extends RS.Resource
 
         @module.init()
         @initialized = true
+
 RS.Script.FromJSModule = (name, module, opt) ->
     rs = new RS.Script(name, "", opt)
     rs.module = module
-    rs.module.code = "1"
+    rs.module.code ?= "1"
 
     return rs
 
+RS.Script.fromCache = (data) ->
+    module = new JS.LoadableModule(data.name, "")
+    module.code = data.code
+    RS.Script.FromJSModule(data.name, module, data.opt)
+
+
 class RS.ExternalScript extends RS.Script
     constructor: (@name, @url, @opt={}) ->
+        @window = window
 
-        @frName = @name + "_ifr"
-        @ifr = TAGS.mkTag("iframe", {
-            "id": @frName
-            "name": @frName
-            "src": "about:blank"
-        });
-
-        @ifr.onload = =>
-            @window = @ifr.contentWindow
-            @document = @window.document
+        @module = new JS.Module(@name, {}, {window: @window})
+        @module.code = 0
 
 
-            @window.window = window
-            @window.document = window.document
-
-            @module = new JS.Module(@name, {}, {window: @window})
-            @module.code = 0
-
-            @tag = TAGS.mkTag('script', {"src": @url})
-
-        document.getElementsByTagName('head')[0].appendChild(@ifr)
+        # document.getElementsByTagName('head')[0].appendChild(@ifr)
 
     import: (module, vars) ->
         for varName in vars
@@ -282,8 +285,13 @@ class RS.ExternalScript extends RS.Script
                     resources[rsName].init()
                     @import(resources[rsName].module, rsVars.split(';'))
 
+                @tag = TAGS.mkTag('script', {"src": @url})
+                console.log('tag', @url, @tag)
+
+
                 @tag.onload = =>
                     @module._postAbsorbe()
+                    @module.code = 1
                     UTILS.safeCall(cbS, @)
                     UTILS.safeCall(cbF, @)
 
@@ -292,21 +300,87 @@ class RS.ExternalScript extends RS.Script
                     UTILS.safeCall(cbF, @)
 
                 @module._preAbsorbe()
-                @document.getElementsByTagName('head')[0].appendChild(@tag)
+                document.getElementsByTagName('head')[0].appendChild(@tag)
 
             cbE, cbF
         )
 
     init: -> # pass
 
+
+class RS.SimpleCache
+    constructor: (@name) ->
+        @key = "RS.SimpleCache.data."+@name
+        @cacheData = sessionStorage[@key]
+        @cacheData = JSON.parse(@cacheData) if @cacheData
+
+    load: (cbS, cbE, cbF) ->
+        if @cacheData
+            rsClass = @cacheData.rsClass
+            rs = RS[@cacheData.rsClass].fromCache(@cacheData)
+            rs.storage = @storage
+
+            if rs
+                UTILS.safeCall(cbS, rs)
+                UTILS.safeCall(cbF, rs)
+            else
+                UTILS.safeCall(cbS, @)
+                UTILS.safeCall(cbF, @)
+
+        else
+            UTILS.safeCall(cbE, @)
+            UTILS.safeCall(cbF, @)
+
+    rsCopy: (rs) ->
+        sessionStorage[@key] = JSON.stringify(rs.cacheData())
+
+class RS.Linked extends RS.Resource
+    constructor: (@name, @resources..., @opt) ->
+
+    load: (cbS, cbE, cbF) ->
+        for rs in @resources
+            rs.storage = @storage
+            rs.opt = @opt
+            rs.name ||= @name
+
+        @_load({
+            "idx": 0
+        }, cbS, cbE, cbF)
+
+    _load: (state, cbS, cbE, cbF) ->
+        rs = @resources[state.idx || 0]
+        unless rs
+            UTILS.safeCall(cbE, @)
+            UTILS.safeCall(cbF, @)
+            return
+
+        rs.load(
+            (rs) =>
+                # notify prevous about me
+                @notify(rs, state)
+                UTILS.safeCall(cbS, rs)
+                UTILS.safeCall(cbF, rs)
+
+            (rs) =>
+                # try next
+                state.idx++
+                @_load(state, cbS, cbE, cbF)
+        )
+
+    notify: (rs, state) ->
+        for lrs in @resources[0..state.idx]
+            UTILS.safeCallCtx(lrs.rsCopy, lrs, rs)
+
+
+
 class RS.Storage
     constructor: (@name, resourcesInfo) ->
         @resources = {}
 
         rsMethods = {
-            "scripts": "addScript",
-            "styles": "addStyle",
-            "images": "addImage",
+            "scripts": "addScript"
+            "styles": "addStyle"
+            "images": "addImage"
             "modules": "addScriptFromModule"
         }
         if resourcesInfo
@@ -392,7 +466,13 @@ RS.rqDo = (storage, rsNames, f) ->
             for rsName in rsNames when TYPES.is(resources[rsName], "Script")
                 resources[rsName].init()
 
-            args = (resources[rsName].data() for rsName in rsNames)
+            args = []
+            for rsName in rsNames
+                rs = resources[rsName]
+                args.push(
+                    UTILS.safeCallCtx(UTILS.getField(rs, 'data'), rs)
+                )
+
             UTILS.safeApply(f, args)
 
         -> throw "error"
@@ -439,17 +519,17 @@ class JS.LoadableModule extends JS.Module
             return
 
         AJAX.GET(@url, {
-            async: true,
+            async: true
             onSuccess: (xhr) =>
                 @code = xhr.responseText
                 UTILS.safeCall(cbS)
                 UTILS.safeCall(cbF)
 
             onError: (xhr) =>
+                @code = xhr.responseText
                 UTILS.safeCall(cbE)
                 UTILS.safeCall(cbF)
         })
-
 
 
 
@@ -475,8 +555,6 @@ class JS.LoadableModule extends JS.Module
         )
 
         return ret
-
-
 
 
 ######## "EXPORT" SECTION ########

@@ -16,16 +16,17 @@ storage = new A.RS.Storage("jquery"
         "heavy": "/img/33.jpg"
 )
 
-A.RS.rqDo(storage,
-    ['jquery-ui', 'naked-ass']
-    ($, imageURL) -> # $("<div><img src='#{imageURL}'></div>").dialog({width: "auto"})
+storage.addResource(
+    new A.RS.Linked(
+        "jquery-ui",
+        new A.RS.SimpleCache("")
+        new A.RS.Script("", "/js/jquery-ui.js")
+        {
+            "export": ["jQuery"],
+            "require": ["jquery:jQuery", "jquery-ui-stylesheet"]
+        }
+    )
 )
-
-A.RS.rqDo(storage,
-    ['naked-ass', 'jquery']
-    (imageURL, $) -> $('<img>', {src: imageURL}).appendTo('body')
-)
-
 
 storage.addResource(new A.RS.ExternalScript("jquery-e",
                                             "//ajax.googleapis.com/ajax/libs/jquery/1.10.1/jquery.min.js",
@@ -37,11 +38,21 @@ storage.addResource(new A.RS.ExternalScript("jquery-ui-e",
                                                 "export": ["jQuery"],
                                                 "require": ["jquery-e:jQuery"]
                                             }))
+# A.RS.rqDo(storage,
+#     ['jquery-ui-e', 'naked-ass']
+#     ($, u) ->
+
+#         x = $("<div id='2'><img src='#{u}'></div>")
+#         x.dialog({"modal": true})
+# )
+
 
 A.RS.rqDo(storage,
-    ['jquery-ui-e', 'naked-ass']
-    ($, u) ->
+    ['jquery-ui', 'naked-ass']
+    ($, imageURL) -> $("<div><img src='#{imageURL}'></div>").dialog({width: "auto"})
+)
 
-        x = $("<div id='2'><img src='#{u}'></div>")
-        x.dialog({"modal": true})
+A.RS.rqDo(storage,
+    ['naked-ass', 'jquery']
+    (imageURL, $) -> $('<img>', {src: imageURL}).appendTo('body')
 )
