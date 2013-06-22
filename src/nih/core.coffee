@@ -482,10 +482,8 @@ RS.rqDo = (storage, rsNames, f) ->
 ######## JS? ########
 JS = {}
 class JS.Module
-    constructor: (@name, @Globals, @opt) ->
-        @Globals ?= {}
+    constructor: (@name, @Globals={}, @opt={}) ->
         @code = 1
-        @opt ?= {}
         @window = opt.window || window
 
     import: (module, vars) ->
@@ -557,9 +555,52 @@ class JS.LoadableModule extends JS.Module
         return ret
 
 
+
+
+
 ######## "EXPORT" SECTION ########
+methodNames = ['requestFileSystem', 'storageInfo']
+vendorPrefixes = ['webkit'];
+for methodName in methodNames
+    methodNameS = methodName[0].toUpperCase() + methodName.substring(1)
+    for vendorPrefix in vendorPrefixes
+        window[methodName] ?= window[vendorPrefix+methodNameS]
+
+
 window.A = A = {
     RS: RS
     T: TYPES
-    U: UTILS
+    UTILS: UTILS
 }
+
+RS.coreStorage = new RS.Storage("core", {
+    "modules":
+        "nih.core": [
+            new JS.Module("nih.core", {
+                "A": A
+            }, {})
+            {"export": "A"}
+        ]
+
+    "scripts":
+        "nih.files": [
+            "/js/nih/fs.js"
+            {
+                "export": ["FILES"]
+                "require": ["nih.core:A"]
+            }
+        ]
+});
+
+
+
+
+######## TEST SECTION ########
+RS.rqDo(RS.coreStorage, "nih.files"
+    (F) ->
+        console.log('F', F)
+        new F.FS(1024,
+            -> console.log('ok')
+            -> console.error('sorry')
+        )
+)
