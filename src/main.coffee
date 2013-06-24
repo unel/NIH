@@ -1,3 +1,5 @@
+return
+
 storage = new A.RS.Storage("jquery"
     "scripts":
         "jquery":     ["/js/jquery-1.9.1.min.js", {"export": ["jQuery"]}],

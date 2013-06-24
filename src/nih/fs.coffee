@@ -5,19 +5,19 @@ class FS
                 # console.log('FS grantedBytes', grantedBytes)
                 window.requestFileSystem(window.PERSISTENT, grantedBytes,
                     (fs) =>
-                        # console.log('FS initialized', fs)
+                        console.log('FS initialized', grantedBytes, fs)
                         @fs = fs
                         A.UTILS.safeCall(cbS, @)
                         A.UTILS.safeCall(cbF, @)
 
                     (fe) =>
-                        # console.error('FS init error', fe)
+                        console.error('FS init error', fe)
                         A.UTILS.safeCall(cbE, fe)
                         A.UTILS.safeCall(cbF, @)
                 )
 
             (fe) =>
-                # console.error('FS init error', fe)
+                console.error('FS init error', fe)
                 A.UTILS.safeCall(cbE, fe)
                 A.UTILS.safeCall(cbF, @)
         )

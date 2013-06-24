@@ -1,10 +1,22 @@
 ######## TYPES ########
 TYPES =
     likeNumber: (v) -> v? && /^\s*[-+]?\d+(\.\d+)?\s*$/.test(v)
-    is: (obj, t) -> TYPES.type(obj) is t
+    is: (obj, t) ->
+        res = TYPES.type(obj) is t
+
+        t = TYPES.type(t) unless typeof(t) is "string"
+
+        if !res && window[t]
+            res = obj instanceof window[t]
+
+        if !res && TYPES.customs[t]
+            res = obj instanceof TYPES.customs[t]
+
+        return res
+
     type: (v) ->
-        res = null
         return if typeof(v) is "undefined"
+        res = v.name
         if !res && v.constructor
             res = v.constructor.name
 
@@ -13,7 +25,9 @@ TYPES =
 
         return res
 
-for typeName in ["Array", "Function", "Boolean"]
+    customs: {}
+
+for typeName in ["Array", "Function", "Boolean", "String"]
     ((TYPES, typeName) ->
         TYPES["is"+typeName] = (obj) -> TYPES.is(obj, typeName)
     )(TYPES, typeName)
@@ -280,8 +294,7 @@ class RS.ExternalScript extends RS.Script
 
         @storage.load(rqNames,
             (resources) =>
-                for [rsName,rsVars] in rqsInfo when TYPES.is(resources[rsName], "Script")\
-                                                 or TYPES.is(resources[rsName], "ExternalScript")
+                for [rsName,rsVars] in rqsInfo when TYPES.is(resources[rsName], "Script")
                     resources[rsName].init()
                     @import(resources[rsName].module, rsVars.split(';'))
 
@@ -412,7 +425,7 @@ class RS.Storage
         # TODO
 
     _load: (rsName, cbS, cbE, cbF) ->
-        rs = @resources[rsName]
+        rs = if TYPES.isString(rsName) then @resources[rsName] else rsName
         if rs
             rs.load(cbS, cbE, cbF)
         else
@@ -432,7 +445,6 @@ class RS.Storage
                 names = rsRequirements.concat(names)
                 requirements.unshift(rsName)
                 seen[rsName] = 1
-
 
         return requirements
 
@@ -459,16 +471,49 @@ class RS.Storage
                         UTILS.safeCall(cbF, resources)
             )
 
+
+RS.P = {} # parametrized
+class RS.Custom extends RS.Resource
+    constructor: (@name, @loader, @dataResolver, @opt) ->
+
+    load: (cbS, cbE, cbF) => @loader(cbS, cbE, cbF)
+
+    data: -> @dataResolver()
+
+RS.P.FS = (size) ->
+    return new RS.Custom(
+        "fs_#{size}"
+        (cbS, cbE, cbF) ->
+            RS.rqDo(RS.coreStorage, "nih.files",
+            (FS) =>
+                new FS.FS(size,
+                    (FS) =>
+                        @FS = FS
+                        UTILS.safeCall(cbS, @)
+                        UTILS.safeCall(cbF, @)
+
+                    (fe) =>
+                        UTILS.safeCall(cbE, fe)
+                        UTILS.safeCall(cbF, fe)
+
+                )
+            =>
+                UTILS.safeCall(cbE)
+                UTILS.safeCall(cbF)
+            )
+        -> @FS
+    )
+
+
+
 RS.rqDo = (storage, rsNames, f) ->
     rsNames = [rsNames] unless TYPES.isArray(rsNames)
     storage.load(rsNames,
         (resources) ->
-            for rsName in rsNames when TYPES.is(resources[rsName], "Script")
-                resources[rsName].init()
-
             args = []
             for rsName in rsNames
-                rs = resources[rsName]
+                rs = if TYPES.isString(rsName) then resources[rsName] else resources[rsName.name]
+                rs.init() if TYPES.is(rs, "Script")
                 args.push(
                     UTILS.safeCallCtx(UTILS.getField(rs, 'data'), rs)
                 )
@@ -592,15 +637,14 @@ RS.coreStorage = new RS.Storage("core", {
         ]
 });
 
+TYPES.customs.Script = RS.Script
+TYPES.customs.ExternalScript = RS.ExternalScript
+
 
 
 
 ######## TEST SECTION ########
-RS.rqDo(RS.coreStorage, "nih.files"
-    (F) ->
-        console.log('F', F)
-        new F.FS(1024,
-            -> console.log('ok')
-            -> console.error('sorry')
-        )
+RS.rqDo(RS.coreStorage, [RS.P.FS(3000)]
+    (FS) ->
+        console.log('FS', FS)
 )
