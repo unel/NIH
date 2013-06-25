@@ -246,6 +246,7 @@ class RS.Script extends RS.Resource
 
         rqsInfo = @requirements()
         for [rs,rsVars] in rqsInfo when TYPES.is(rs, "Script")
+            rs.module.init()
             @module.import(rs.module, rsVars)
 
         @module.init()
@@ -299,8 +300,6 @@ class RS.ExternalScript extends RS.Script
                     @import(resources[rsName].module, rsVars.split(';'))
 
                 @tag = TAGS.mkTag('script', {"src": @url})
-                console.log('tag', @url, @tag)
-
 
                 @tag.onload = =>
                     @module._postAbsorbe()
@@ -347,6 +346,49 @@ class RS.SimpleCache
     rsCopy: (rs) ->
         sessionStorage[@key] = JSON.stringify(rs.cacheData())
 
+class RS.FSCache
+    constructor: (@name, @rsClass) ->
+        @key = "/RS/FSCache/#{@name}"
+
+    load: (cbS, cbE, cbF) ->
+        RS.rqDo(RS.coreStorage, [RS.P.FS(1024)]
+            (FS) =>
+                FS.read(@key, {"method": "readAsDataURL"},
+                    (url) =>
+                        rs = new RS[@rsClass](@name, url)
+                        if rsVars
+                            UTILS.safeCall(cbS, rs)
+                            UTILS.safeCall(cbF, rs)
+                        else
+                            UTILS.safeCall(cbE, rs)
+                            UTILS.safeCall(cbF, rs)
+                    (fe) =>
+                        console.warn("xx", fe)
+                        UTILS.safeCall(cbE, fe)
+                        UTILS.safeCall(cbF, fe)
+                )
+            =>
+                UTILS.safeCall(cbE)
+                UTILS.safeCall(cbF)
+        )
+
+    rsCopy: (rs) ->
+
+        img = rs.elem
+        c = A.TAGS.mkTag('canvas')
+        c.width = img.width
+        c.height = img.height
+        ctx = c.getContext('2d')
+        ctx.drawImage(img, 0, 0)
+
+        dataURL = c.toDataURL()
+        console.log(rs, dataURL)
+        # ... ? ...
+        debugger
+
+
+
+
 class RS.Linked extends RS.Resource
     constructor: (@name, @resources..., @opt) ->
 
@@ -391,12 +433,19 @@ class RS.Storage
         @resources = {}
 
         rsMethods = {
+            "scripts:c": "addCachedScript"
             "scripts": "addScript"
+
             "styles": "addStyle"
+
+            "images:c": "addCachedImage"
             "images": "addImage"
             "modules": "addScriptFromModule"
         }
         if resourcesInfo
+            if TYPES.isString(resourcesInfo)
+                xhr = AJAX.GET(resourcesInfo)
+                resourcesInfo = JSON.parse(xhr.responseText)
             for rsType,resources of resourcesInfo
                 rsMethod = rsMethods[rsType]
                 continue unless rsMethod
@@ -412,8 +461,20 @@ class RS.Storage
     addScript: (name, url, opt) ->
         @addResource(new RS.Script(name, url, opt))
 
+    addCachedResource: (rs, opt) ->
+        @addResource(new RS.Linked(rs.name, new RS.SimpleCache(""), rs, opt))
+
+    addFSCachedResource: (rs, opt) ->
+        @addResource(new RS.Linked(rs.name, new RS.FSCache(""), rs, opt))
+
+    addCachedScript: (name, url, opt) ->
+        @addCachedResource(new RS.Script(name, url), opt)
+
     addImage: (name, url, opt) ->
         @addResource(new RS.Image(name, url, opt))
+
+    addCachedImage: (name, url, opt) ->
+        @addFSCachedResource(new RS.Image(name, url), opt)
 
     addStyle: (name, url, opt) ->
         @addResource(new RS.Style(name, url, opt))
@@ -484,17 +545,17 @@ RS.P.FS = (size) ->
     return new RS.Custom(
         "fs_#{size}"
         (cbS, cbE, cbF) ->
-            RS.rqDo(RS.coreStorage, "nih.files",
-            (FS) =>
+            RS.rqDo(RS.coreStorage, ["nih.files", "nih.core"]
+            (FS, A) =>
                 new FS.FS(size,
                     (FS) =>
                         @FS = FS
-                        UTILS.safeCall(cbS, @)
-                        UTILS.safeCall(cbF, @)
+                        A.UTILS.safeCall(cbS, @)
+                        A.UTILS.safeCall(cbF, @)
 
                     (fe) =>
-                        UTILS.safeCall(cbE, fe)
-                        UTILS.safeCall(cbF, fe)
+                        A.UTILS.safeCall(cbE, fe)
+                        A.UTILS.safeCall(cbF, fe)
 
                 )
             =>
@@ -524,6 +585,8 @@ RS.rqDo = (storage, rsNames, f) ->
     )
 
 
+
+
 ######## JS? ########
 JS = {}
 class JS.Module
@@ -548,6 +611,8 @@ class JS.Module
         @_preAbsorbe()
         UTILS.safeCall(f)
         @_postAbsorbe()
+
+    init: () -> # pass
 
 class JS.LoadableModule extends JS.Module
     constructor: (@name, @url, @opt) ->
@@ -613,8 +678,10 @@ for methodName in methodNames
 
 
 window.A = A = {
+    AJAX: AJAX
     RS: RS
     T: TYPES
+    TAGS: TAGS
     UTILS: UTILS
 }
 
@@ -637,6 +704,8 @@ RS.coreStorage = new RS.Storage("core", {
         ]
 });
 
+
+
 TYPES.customs.Script = RS.Script
 TYPES.customs.ExternalScript = RS.ExternalScript
 
@@ -644,7 +713,7 @@ TYPES.customs.ExternalScript = RS.ExternalScript
 
 
 ######## TEST SECTION ########
-RS.rqDo(RS.coreStorage, [RS.P.FS(3000)]
-    (FS) ->
-        console.log('FS', FS)
-)
+# RS.rqDo(RS.coreStorage, [RS.P.FS(3000)]
+#     (FS) ->
+#         console.log('FS', FS)
+# )
