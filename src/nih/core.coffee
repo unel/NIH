@@ -82,6 +82,7 @@ AJAX.J = (url, options) ->
         "3": options.onDataRecieve
         "4": options.onDataLoad
         "4/200": [options.onSuccess, options.onFinish]
+        "4/0": [options.onSuccess, options.onFinish] # from cache oO
         "4/else": [options.onError, options.onFinish]
     }
 
@@ -356,7 +357,7 @@ class RS.FSCache
                 FS.read(@key, {"method": "readAsDataURL"},
                     (url) =>
                         rs = new RS[@rsClass](@name, url)
-                        if rsVars
+                        if rs
                             UTILS.safeCall(cbS, rs)
                             UTILS.safeCall(cbF, rs)
                         else
@@ -381,10 +382,36 @@ class RS.FSCache
         ctx = c.getContext('2d')
         ctx.drawImage(img, 0, 0)
 
-        dataURL = c.toDataURL()
-        console.log(rs, dataURL)
+        dataURL = c.toDataURL("image/jpeg")
+        # console.log(rs, dataURL)
+
+        RS.rqDo(RS.coreStorage, [RS.P.FS(1024)],
+            (FS) =>
+                data = FS.dataURLtoBlob(dataURL, "image/jpeg")
+                console.log("data", data)#, dataURL)
+                FS.write(@key, {
+                        "data": data
+                    },
+                    => console.log("rsCopy success")
+
+                    (fe) =>
+                        console.error("rsCopy failed", fe)
+                        if fe.code is fe.NOT_FOUND_ERR
+                            FS.mkFile(@key
+                                =>
+                                    FS.write(@key, {"data": data},
+                                        => console.log("rsCopy ok")
+                                        => console.error("rsCopy err", fe)
+                                    )
+                                (fe) =>
+                                    FS.rmFile(@key)
+                                    console.error("rsCopy err", fe)
+                            )
+                )
+        )
         # ... ? ...
-        debugger
+        # debugger
+
 
 
 
@@ -423,6 +450,7 @@ class RS.Linked extends RS.Resource
         )
 
     notify: (rs, state) ->
+        return unless state.idx
         for lrs in @resources[0..state.idx]
             UTILS.safeCallCtx(lrs.rsCopy, lrs, rs)
 
@@ -465,7 +493,7 @@ class RS.Storage
         @addResource(new RS.Linked(rs.name, new RS.SimpleCache(""), rs, opt))
 
     addFSCachedResource: (rs, opt) ->
-        @addResource(new RS.Linked(rs.name, new RS.FSCache(""), rs, opt))
+        @addResource(new RS.Linked(rs.name, new RS.FSCache(rs.name, opt.rsClass), rs, opt))
 
     addCachedScript: (name, url, opt) ->
         @addCachedResource(new RS.Script(name, url), opt)
@@ -474,6 +502,8 @@ class RS.Storage
         @addResource(new RS.Image(name, url, opt))
 
     addCachedImage: (name, url, opt) ->
+        opt ?= {}
+        opt.rsClass = opt.rsClass || "Image";
         @addFSCachedResource(new RS.Image(name, url), opt)
 
     addStyle: (name, url, opt) ->

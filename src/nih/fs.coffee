@@ -22,6 +22,11 @@ class FS
                 A.UTILS.safeCall(cbF, @)
         )
 
+    dataURLtoBlob: (dataURL, type) ->
+        binary = atob(dataURL.split(',')[1])
+        array = (binary.charCodeAt(idx) for idx in [0..binary.length-1])
+        return new Blob([new Uint8Array(array)], {"type": type})
+
     mkDir: (parent, dirName, cbS, cbE, cbF) ->
         parent.getDirectory(dirName, {"create": true},
             (dirEntry) =>
@@ -100,9 +105,7 @@ class FS
             "String": "_rmFileP"
         }[TYPES.type(f)]](f, cbS, cbE, cbF)
 
-
-
-    open: (path, cbS, cbE, cbF) ->
+    open: (path, cbS, cbE, cbF) =>
         @fs.root.getFile(path, {"create": false},
             (fileEntry) =>
                 A.UTILS.safeCall(cbS, fileEntry)
@@ -162,7 +165,7 @@ class FS
     _writeP: (path, opt, cbS, cbE, cbF) ->
         @open(path,
             (fileEntry) =>
-                @_writeFE(fileWriter, opt, cbS, cbE, cbF)
+                @_writeFE(fileEntry, opt, cbS, cbE, cbF)
             cbE, cbF
         )
 
@@ -180,16 +183,15 @@ class FS
 
 
 
-
     _readF: (file, opt, cbS, cbE, cbF) ->
         reader = new FileReader()
         reader.onloadend = (e) ->
-            safeCall(cbS, this.result, e)
-            safeCall(cbF, this.result, e)
+            A.UTILS.safeCall(cbS, this.result, e)
+            A.UTILS.safeCall(cbF, this.result, e)
 
         reader.onerror = (fe) ->
-            safeCall(cbE, fe)
-            safeCall(cbF, fe)
+            A.UTILS.safeCall(cbE, fe)
+            A.UTILS.safeCall(cbF, fe)
 
         reader[opt.method || 'readAsText'](file) # readAs{Text,DataURL,ArrayBuffer}
 
@@ -199,8 +201,8 @@ class FS
                 @_readF(file, opt, cbS, cbE, cbF)
 
             (fe) =>
-                safeCall(cbE, fe)
-                safeCall(cbF, fe)
+                A.UTILS.safeCall(cbE, fe)
+                A.UTILS.safeCall(cbF, fe)
         )
 
     _readP: (path, opt, cbS, cbE, cbF) ->
