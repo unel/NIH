@@ -192,13 +192,39 @@ class RS.TagBasedResource extends RS.Resource
 
         return @
 
+    fsData: (cbS, cbE, cbF) ->
+        # works only for own resources =(
+        A.AJAX.GET(@url(), {
+            "async": true,
+            "onSuccess": (xhr) =>
+                debugger
+                blob = new Blob([xhr.responseText], {"type": "text/plain"})
+                UTILS.safeCall(cbS, blob)
+                UTILS.safeCall(cbF, blob)
+
+            "onError": (xhr) =>
+                UTILS.safeCall(cbE, xhr.error)
+                UTILS.safeCall(cbF, xhr.error)
+        })
+
+    cacheData: () ->
+        ret = null
+
+        A.AJAX.GET(@url, {
+            "onSuccess": (xhr) => ret = xhr.responseText
+        })
+
+        return ret
+
+
+
 class RS.Image extends RS.TagBasedResource
     constructor: (@name, @_url) ->
         @tagName = 'IMG'
         @attrName = 'src'
 
     fsData: (cbS, cbE, cbF) ->
-        img = rs.elem
+        img = @elem
 
         try
             c = A.TAGS.mkTag('canvas')
@@ -211,11 +237,11 @@ class RS.Image extends RS.TagBasedResource
             data = FS.dataURLtoBlob(dataURL, "image/jpeg")
 
         catch ex
-            safeCall(cbE, ex)
-            safeCall(cbF, ex)
+            UTILS.safeCall(cbE, ex)
+            UTILS.safeCall(cbF, ex)
 
-        safeCall(cbS, data)
-        safeCall(cbF, data)
+        UTILS.safeCall(cbS, data)
+        UTILS.safeCall(cbF, data)
 
 
 class RS.Style extends RS.TagBasedResource
@@ -375,7 +401,8 @@ class RS.FSCache
     load: (cbS, cbE, cbF) ->
         RS.rqDo(RS.coreStorage, [RS.P.FS(1024)]
             (FS) =>
-                FS.read(@key, {"method": "readAsDataURL"},
+                @FS = FS
+                @FS.read(@key, {"method": "readAsDataURL"},
                     (url) =>
                         rs = new RS[@rsClass](@name, url)
                         if rs
@@ -398,16 +425,16 @@ class RS.FSCache
     rsCopy: (rs) ->
         rs.fsData(
             (fsData) =>
-                FS.cwrite(@key, {
+                @FS.cwrite(@key, {
                     "data": fsData
                 }
                 =>
                     console.log("oke")
                 =>
-                    console.error("fail")
+                    console.error("fail?")
                 )
             =>
-                console.error("fail")
+            console.error("fail?!")
         )
 
 
@@ -461,6 +488,7 @@ class RS.Storage
             "scripts:c": "addCachedScript"
             "scripts": "addScript"
 
+            "styles:c": "addCachedStyle"
             "styles": "addStyle"
 
             "images:c": "addCachedImage"
@@ -500,11 +528,16 @@ class RS.Storage
 
     addCachedImage: (name, url, opt) ->
         opt ?= {}
-        opt.rsClass = opt.rsClass || "Image";
+        opt.rsClass = opt.rsClass || "Image"
         @addFSCachedResource(new RS.Image(name, url), opt)
 
     addStyle: (name, url, opt) ->
         @addResource(new RS.Style(name, url, opt))
+
+    addCachedStyle: (name, url, opt) ->
+        opt ?= {}
+        opt.rsClass = opt.rsClass || "Style"
+        @addFSCachedResource(new RS.Style(name, url), opt)
 
     addScriptFromModule: (name, module, opt) ->
         @addResource(RS.Script.FromJSModule(name, module, opt))

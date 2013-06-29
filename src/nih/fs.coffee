@@ -182,25 +182,25 @@ class FS
         @[writeMethod](to, opt, cbS, cbE, cbF)
 
     cwrite: (to, opt, cbS, cbE, cbF) ->
-        this.write(to, opt,
+        @write(to, opt,
             cbS,
             (fe) =>
-                if fe.code in fe.NOT_FOUND_ERR
-                    this.mkFile(to,
-                        (fileEntry) => this._writeFE(fileEntry, opt, cbS, cbE, cbF)
+                if fe.code is fe.NOT_FOUND_ERR
+                    @mkFile(to,
+                        (fileEntry) => @_writeFE(fileEntry, opt, cbS, cbE, cbF)
                         cbE
                         cbF
                     )
                 else
-                    UTILS.safeCall(cbE, fe)
+                    A.UTILS.safeCall(cbE, fe)
             cbF
         )
 
     _readF: (file, opt, cbS, cbE, cbF) ->
         reader = new FileReader()
         reader.onloadend = (e) ->
-            A.UTILS.safeCall(cbS, this.result, e)
-            A.UTILS.safeCall(cbF, this.result, e)
+            A.UTILS.safeCall(cbS, @result, e)
+            A.UTILS.safeCall(cbF, @result, e)
 
         reader.onerror = (fe) ->
             A.UTILS.safeCall(cbE, fe)
@@ -247,6 +247,31 @@ class FS
             "String": "_dirP"
             "DirectoryEntry": "_dirDE"
             "DirectoryReader": "_dirDR"
+        }[TYPES.type(d)]](d, cbS, cbE, cbF)
+
+
+    _rmDirDE: (dirEntry, cbS, cbE, cbF) ->
+        dirEntry.removeRecursively(
+            =>
+                A.UTILS.safeCall(cbS)
+                A.UTILS.safeCall(cbF)
+            (fe) =>
+                A.UTILS.safeCall(cbE, fe)
+                A.UTILS.safeCall(cbF, fe)
+        )
+
+    _rmDirP: (path, cbS, cbE, cbF) ->
+        @fs.root.getDirectory(path, {},
+            (dirEntry) => @_rmDirDE(dirEntry, cbS, cbE, cbF)
+            (fe) =>
+                A.UTILS.safeCall(cbE, fe)
+                A.UTILS.safeCall(cbF, fe)
+        )
+
+    rmDir: (d, cbS, cbE, cbF) ->
+        @[{
+            "String": "_rmDirP"
+            "DirectoryEntry": "_rmDirDE"
         }[TYPES.type(d)]](d, cbS, cbE, cbF)
 
 window.FILES = FILES = {
