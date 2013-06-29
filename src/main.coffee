@@ -4,7 +4,7 @@ storage = new A.RS.Storage("jquery", "/rs/test_repo.json");
 
 
 A.RS.rqDo(storage,
-    ['jquery-ui-c', 'naked-ass-c']
+    ['jquery-ui-c', 'heavy-c']
     ($, imageURL) -> $("<div><img src='#{imageURL}'></div>").dialog({width: "auto"})
 )
 

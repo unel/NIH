@@ -197,6 +197,27 @@ class RS.Image extends RS.TagBasedResource
         @tagName = 'IMG'
         @attrName = 'src'
 
+    fsData: (cbS, cbE, cbF) ->
+        img = rs.elem
+
+        try
+            c = A.TAGS.mkTag('canvas')
+            c.width = img.width
+            c.height = img.height
+            ctx = c.getContext('2d')
+            ctx.drawImage(img, 0, 0)
+
+            dataURL = c.toDataURL("image/jpeg")
+            data = FS.dataURLtoBlob(dataURL, "image/jpeg")
+
+        catch ex
+            safeCall(cbE, ex)
+            safeCall(cbF, ex)
+
+        safeCall(cbS, data)
+        safeCall(cbF, data)
+
+
 class RS.Style extends RS.TagBasedResource
     constructor: (@name, @_url) ->
         @tagName = 'LINK'
@@ -373,45 +394,21 @@ class RS.FSCache
                 UTILS.safeCall(cbF)
         )
 
+
     rsCopy: (rs) ->
-
-        img = rs.elem
-        c = A.TAGS.mkTag('canvas')
-        c.width = img.width
-        c.height = img.height
-        ctx = c.getContext('2d')
-        ctx.drawImage(img, 0, 0)
-
-        dataURL = c.toDataURL("image/jpeg")
-        # console.log(rs, dataURL)
-
-        RS.rqDo(RS.coreStorage, [RS.P.FS(1024)],
-            (FS) =>
-                data = FS.dataURLtoBlob(dataURL, "image/jpeg")
-                console.log("data", data)#, dataURL)
-                FS.write(@key, {
-                        "data": data
-                    },
-                    => console.log("rsCopy success")
-
-                    (fe) =>
-                        console.error("rsCopy failed", fe)
-                        if fe.code is fe.NOT_FOUND_ERR
-                            FS.mkFile(@key
-                                =>
-                                    FS.write(@key, {"data": data},
-                                        => console.log("rsCopy ok")
-                                        => console.error("rsCopy err", fe)
-                                    )
-                                (fe) =>
-                                    FS.rmFile(@key)
-                                    console.error("rsCopy err", fe)
-                            )
+        rs.fsData(
+            (fsData) =>
+                FS.cwrite(@key, {
+                    "data": fsData
+                }
+                =>
+                    console.log("oke")
+                =>
+                    console.error("fail")
                 )
+            =>
+                console.error("fail")
         )
-        # ... ? ...
-        # debugger
-
 
 
 

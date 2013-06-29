@@ -181,7 +181,20 @@ class FS
 
         @[writeMethod](to, opt, cbS, cbE, cbF)
 
-
+    cwrite: (to, opt, cbS, cbE, cbF) ->
+        this.write(to, opt,
+            cbS,
+            (fe) =>
+                if fe.code in fe.NOT_FOUND_ERR
+                    this.mkFile(to,
+                        (fileEntry) => this._writeFE(fileEntry, opt, cbS, cbE, cbF)
+                        cbE
+                        cbF
+                    )
+                else
+                    UTILS.safeCall(cbE, fe)
+            cbF
+        )
 
     _readF: (file, opt, cbS, cbE, cbF) ->
         reader = new FileReader()
