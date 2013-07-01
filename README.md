@@ -1,3 +1,3 @@
 NIH
 ===
-` http://lurkmore.to/NIH#Not_Invented_Here
+http://lurkmore.to/NIH#Not_Invented_Here
