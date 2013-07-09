@@ -197,7 +197,7 @@ class RS.TagBasedResource extends RS.Resource
         A.AJAX.GET(@url(), {
             "async": true,
             "onSuccess": (xhr) =>
-                debugger
+                # debugger
                 blob = new Blob([xhr.responseText], {"type": "text/plain"})
                 UTILS.safeCall(cbS, blob)
                 UTILS.safeCall(cbF, blob)
@@ -216,7 +216,10 @@ class RS.TagBasedResource extends RS.Resource
 
         return ret
 
-
+dataURLtoBlob = (dataURL, type) ->
+        binary = atob(dataURL.split(',')[1])
+        array = (binary.charCodeAt(idx) for idx in [0..binary.length-1])
+        return new Blob([new Uint8Array(array)], {"type": type})
 
 class RS.Image extends RS.TagBasedResource
     constructor: (@name, @_url) ->
@@ -234,7 +237,7 @@ class RS.Image extends RS.TagBasedResource
             ctx.drawImage(img, 0, 0)
 
             dataURL = c.toDataURL("image/jpeg")
-            data = FS.dataURLtoBlob(dataURL, "image/jpeg")
+            data = dataURLtoBlob(dataURL, "image/jpeg")
 
         catch ex
             UTILS.safeCall(cbE, ex)
@@ -405,12 +408,13 @@ class RS.FSCache
                 @FS.read(@key, {"method": "readAsDataURL"},
                     (url) =>
                         rs = new RS[@rsClass](@name, url)
-                        if rs
-                            UTILS.safeCall(cbS, rs)
-                            UTILS.safeCall(cbF, rs)
-                        else
+
+                        unless rs
                             UTILS.safeCall(cbE, rs)
                             UTILS.safeCall(cbF, rs)
+
+                        rs.load(cbS, cbE, cbF)
+
                     (fe) =>
                         console.warn("xx", fe)
                         UTILS.safeCall(cbE, fe)
@@ -434,7 +438,7 @@ class RS.FSCache
                     console.error("fail?")
                 )
             =>
-            console.error("fail?!")
+                console.error("fail?!")
         )
 
 
@@ -581,16 +585,17 @@ class RS.Storage
             return UTILS.safeCall(cbS, resources)
 
         for rsName in rqNames
-            @_load(rsName
-                (rs) -> success_cnt++
-                (rs) -> errors_cnt++
-                (rs) ->
-                    resources[rs.name] = rs
+            ((rsName) =>
+                @_load(rsName
+                    (rs) -> success_cnt++
+                    (rs) -> errors_cnt++
+                    (rs) ->
+                        resources[rs.name] = rs
 
-                    if ++finish_cnt >= rqNames.length
-                        UTILS.safeCall((if errors_cnt then cbE else cbS), resources)
-                        UTILS.safeCall(cbF, resources)
-            )
+                        if ++finish_cnt >= rqNames.length
+                            UTILS.safeCall((if errors_cnt then cbE else cbS), resources)
+                            UTILS.safeCall(cbF, resources)
+                ))(rsName)
 
 
 RS.P = {} # parametrized
@@ -754,7 +759,7 @@ RS.coreStorage = new RS.Storage("core", {
             {"export": "A"}
         ]
 
-    "scripts":
+    "scripts:c":
         "nih.files": [
             "/js/nih/fs.js"
             {
