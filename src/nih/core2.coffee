@@ -41,7 +41,6 @@ class Module
 				else
 					self.Exports[vars] = varValue
 		}
-		@Globals.window = @Globals
 		@window = window
 
 		@do(init)
@@ -65,7 +64,6 @@ class Module
 		for varName,varValue of @window when !vars.hasOwnProperty(varName)
 			@Globals[varName] = varValue
 			delete @window[varName]
-
 
 app = new App("core")
 types = new Module(app, "types", ->
@@ -174,4 +172,17 @@ ajax = new Module(app, "ajax", ->
 	})
 )
 
+core = new Module(app, "core", ->
+	imp("ajax", ["J"])
+
+	Module.fromURL = (app, name, url, exports) ->
+		code = J(url).responseText
+
+		module = new Module(app, name, code)
+		module.Builtins.exp(exports)
+
+		return module
+)
+
+jq = Module.fromURL(app, "jQuery", "/js/jquery-1.9.1.min.js", ["jQuery"])
 window.app = app
