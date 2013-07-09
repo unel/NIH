@@ -5,7 +5,6 @@ class App
 	register: (module) ->
 		@Modules[module.name] = module
 
-
 class Module
 	constructor: (@app, @name, init) ->
 		self = this
@@ -134,6 +133,15 @@ utils = new Module(app, "utils", ->
 	})
 )
 
+iter = new Module(app, "iter", ->
+	processAsyncChain = (chain, processor, cb) ->
+		ret = {}
+
+		for idx,c in chain
+			((c) ->
+			)()
+)
+
 ajax = new Module(app, "ajax", ->
 	imp("types as T")
 	imp("utils as U")
@@ -182,7 +190,31 @@ core = new Module(app, "core", ->
 		module.Builtins.exp(exports)
 
 		return module
+
+
+	class Requirement
+		constructor: (@name) ->
+
+	class Provider
+		constructor: (@name, @Meta={}) ->
+		provide: (req, cb) -> throw "need implementation"
+
+	class ModuleProvider extends Provider
+		provide: (req, cb) ->
+			meta = @Meta(req.name)
+
+			return cb(0, "No meta for req.name") unless meta
+
+			deps = meta.deps(req) || []
+
+
+
+
+
 )
 
 jq = Module.fromURL(app, "jQuery", "/js/jquery-1.9.1.min.js", ["jQuery"])
 window.app = app
+
+
+##########################################################################
