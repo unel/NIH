@@ -759,7 +759,7 @@ RS.coreStorage = new RS.Storage("core", {
             {"export": "A"}
         ]
 
-    "scripts:c":
+    "scripts:sc":
         "nih.files": [
             "/js/nih/fs.js"
             {
