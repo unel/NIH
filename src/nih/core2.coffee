@@ -120,11 +120,11 @@ utils = new Module(app, "utils", ->
 	getField = (obj, path) ->
 		return unless path
 		ret = obj
-		unless TYPES.isArray(path)
+		unless T.isArray(path)
 			path = path.split(".")
 
 		for field in path
-			if ret && TYPES.type(ret[field]) isnt "undefined"
+			if ret && T.type(ret[field]) isnt "undefined"
 				ret = ret[field]
 			else
 				return
