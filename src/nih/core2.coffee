@@ -122,7 +122,6 @@ types = new Module(app, "types", ->
 		"isEmpty"
 		(v) -> iss["Undefined"](v) || iss["Null"](v) || (iss["String"](v) && v is "")
 	)
-
 )
 
 utils = new Module(app, "utils", ->
@@ -164,12 +163,34 @@ utils = new Module(app, "utils", ->
 
 		return ret
 
+	mkTag = (tagName, attrs={}, style={}) ->
+		specials =
+			"text": (t, txt) -> t.innerText = txt
+			"html": (t, html) -> t.innerHTML = html
+
+		tag = document.createElement tagName
+
+		for name,value of attrs
+			if T.isBoolean(value) && value
+				tag.setAttribute(name, "")
+
+			else if T.isFunction(specials[name])
+				specials[name](tag, value)
+
+			else
+				tag.setAttribute(name, value)
+
+		for name,value of style
+			tag.style[name] = value
+
+		return tag
 
 	exp(
 		"repr": repr
 		"pick":  (key) -> (obj) -> obj[key]
 		"rpick": (obj) -> (key) -> obj[key]
 		"safeCall": safeCall
+		"mkTag": mkTag
 	)
 )
 
@@ -301,7 +322,7 @@ rqs = new Module(app, "rqs", ->
 			self = this
 			meta = @Meta[req.name]
 
-			return cb(0, "No meta for req.name") unless meta
+			return U.safeCall(cb, 0, "No meta for #{req.name}") unless meta
 
 			deps = U.safeCall(meta.deps, req) || []
 
@@ -317,17 +338,57 @@ rqs = new Module(app, "rqs", ->
 				(modulesInfo) ->
 					url = meta.url
 					module = Module.fromURL(app, req.name, meta.url, meta.imports, meta.exports)
-					U.safeCall(cb, module)
+					U.safeCall(cb, 1, module)
 			)
 
+	class TagBasedProvider extends Provider
+		constructor: (@name, @Meta={}) ->
+			super(@name, @Meta)
+			@tagsByURL = {}
+
+		provide: (req, cb) ->
+			self = this
+			meta = @Meta[req.name]
+
+			success = (tag) -> U.safeCall(cb, 1, tag.cloneNode(true))
+			fail    = (msg) -> U.safeCall(cb, 0, msg)
+
+			return fail("No meta for #{req.name}") unless meta
+
+			url = meta.url
+			tag = @tagsByURL[url]
+
+			return success(tag) if tag
+
+			@tagsByURL[url] = tag = U.mkTag(@tagName, @attrs)
+			tag.setAttribute(@srcAttr, url)
+
+			tag.onload = => success(tag)
+			tag.onerror = => fail("loading error")
+
+			document.getElementsByTagName('head')[0].appendChild(tag)
+
+
+	class StyleProvider extends TagBasedProvider
+		tagName: 'link'
+		srcAttr: 'href'
+		attrs: {
+			"rel": "stylesheet"
+		}
+
+	class ImageProvider extends TagBasedProvider
+		tagName: 'img'
+		srcAttr: 'src'
 
 	exp(
 		"Requirement": Requirement
 		"ModuleProvider": ModuleProvider
+		"StyleProvider": StyleProvider
+		"ImageProvider": ImageProvider
 	)
 )
 
-
+# TESTING: ModuleProvider
 # app.do(->
 # 	imp("rqs as R")
 # 	mqj = new R.ModuleProvider("jq"
@@ -337,7 +398,7 @@ rqs = new Module(app, "rqs", ->
 
 # 	"jQueryUI":
 # 		"url": "/js/jquery-ui.js"
-# 		"deps": () -> [new R.Requirement("jQuery")]
+# 		"deps": -> [new R.Requirement("jQuery")]
 # 		"imports": [
 # 			["jQuery", "jQuery"]
 # 		]
@@ -346,7 +407,7 @@ rqs = new Module(app, "rqs", ->
 
 # 	mqj.provide(
 # 		new R.Requirement("jQueryUI")
-# 		(module) ->
+# 		(r, module) ->
 # 			$ = module.Exports.jQuery
 # 			$(->
 # 				$("<div>oO</div>").dialog()
@@ -354,21 +415,50 @@ rqs = new Module(app, "rqs", ->
 # 	)
 # )
 
+# TESTING: TagBasedProviders
 app.do(->
-	imp("ajax", ["J"])
-
-	J("/js/jquery-ui.js", {
-		"onSuccess": [
-			-> alert("ook!")
-			-> alert("rly?")
-		]
-		"onError": [
-			-> alert("nnooo")
-		]
-		"onDataLoad": -> alert('load')
-		"onFinish": -> alert("f")
-	})
+	imp("rqs as R")
+	images = new R.ImageProvider("xxx"
+		"torvalds":
+			"url": "/img/nakedass.png"
 	)
+	styles = new R.StyleProvider("xxx"
+		"jQuery":
+			"url": "/css/jquery-ui-1.10.3.custom.css"
+			"deps": -> [
+				new R.Requirement("jQuery-images")
+			]
+	)
+
+	styles.provide(
+		new R.Requirement("jQuery")
+		(r, style) ->
+			debugger
+	)
+
+	images.provide(
+		new R.Requirement("torvalds")
+		(r, img) ->
+			document.getElementsByTagName('body')[0].appendChild(img)
+	)
+)
+
+# TESTING: ajax.J callbacks
+# app.do(->
+# 	imp("ajax", ["J"])
+
+# 	J("/js/jquery-ui.js", {
+# 		"onSuccess": [
+# 			-> alert("ook!")
+# 			-> alert("rly?")
+# 		]
+# 		"onError": [
+# 			-> alert("nnooo")
+# 		]
+# 		"onDataLoad": -> alert('load')
+# 		"onFinish": -> alert("f")
+# 	})
+# )
 
 window.app = app
 ##########################################################################
