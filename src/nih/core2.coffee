@@ -167,8 +167,9 @@ utils = new Module(app, "utils", ->
 
 	exp(
 		"repr": repr
+		"pick":  (key) -> (obj) -> obj[key]
+		"rpick": (obj) -> (key) -> obj[key]
 		"safeCall": safeCall
-		"pick": (key) -> (obj) -> obj[key]
 	)
 )
 
