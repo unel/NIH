@@ -227,14 +227,14 @@ ajax = new Module(app, "ajax", ->
 		XHR.id = new Date().getTime()
 		XHR.open(options.method, url, options.async)
 
-		cbsByState = {
+		cbsByState =
 			"2": options.onDataSend
 			"3": options.onDataRecieve
 			"4": options.onDataLoad
-			"4/0": [options.onSuccess, options.onFinish] # from cache oO
-			"4/200": [options.onSuccess, options.onFinish]
-			"4/else": [options.onError, options.onFinish]
-		}
+			"4/0":    [options.onSuccess, options.onFinish] # from cache oO
+			"4/200":  [options.onSuccess, options.onFinish]
+			"4/else": [options.onError,   options.onFinish]
+
 
 		XHR.onreadystatechange = ->
 			cbs = cbsByState[XHR.readyState] \
@@ -250,9 +250,9 @@ ajax = new Module(app, "ajax", ->
 		XHR.send(options.data || null)
 		return XHR
 
-	exp({
+	exp(
 		"J": J
-	})
+	)
 )
 
 app.do(->
