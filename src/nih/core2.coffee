@@ -5,6 +5,13 @@ class App
 	register: (module) ->
 		@Modules[module.name] = module
 
+	do: (expr) ->
+		moduleName = "tmp"
+
+		tmpModule = new Module(@, moduleName, expr)
+
+		delete @Modules[moduleName]
+
 class Module
 	constructor: (@app, @name, init) ->
 		self = this
@@ -68,6 +75,10 @@ app = new App("core")
 types = new Module(app, "types", ->
 	customs = {}
 
+	iss =
+		"Null": (v) -> v is null
+		"Undefined": (v) -> v is undefined
+
 	likeNumber = (v) -> v? && /^\s*[-+]?\d+(\.\d+)?\s*$/.test(v)
 	aISb = (obj, t) ->
 		res = getType(obj) is t
@@ -94,16 +105,24 @@ types = new Module(app, "types", ->
 		return res
 
 
-	exp({
-		"lineNumber": likeNumber
+	exp(
+		"likeNumber": likeNumber
 		"is": aISb
 		"type": getType
-	})
+	)
 
 	for typeName in ["Array", "Function", "Boolean", "String"]
 		((typeName) ->
-			exp("is#{typeName}", (obj) -> aISb(obj, typeName))
+			iss[typeName] = (obj) -> aISb(obj, typeName)
+			exp("is#{typeName}", iss[typeName])
 		)(typeName)
+
+
+	exp(
+		"isEmpty"
+		(v) -> iss["Undefined"](v) || iss["Null"](v) || (iss["String"](v) && v is "")
+	)
+
 )
 
 utils = new Module(app, "utils", ->
@@ -112,7 +131,16 @@ utils = new Module(app, "utils", ->
 	safeCallCtx = (f, ctx, args...) -> f.apply(ctx, args) if T.isFunction(f)
 	safeCall = (f, args...) -> f.apply(window, args) if T.isFunction(f)
 	safeApply = (f, args) -> f.apply(window, args) if T.isFunction(f)
+	repr = JSON.stringify
 
+	Array.prototype.joine = (separator=', ') ->
+		ret = []
+
+		for e in this
+			unless T.isEmpty(e)
+				ret.push(e)
+
+		return ret.join(separator)
 
 	getField = (obj, path) ->
 		return unless path
@@ -128,18 +156,65 @@ utils = new Module(app, "utils", ->
 
 		return ret
 
-	exp({
+	exp(
+		"repr": repr
 		"safeCall": safeCall
-	})
+	)
 )
 
 iter = new Module(app, "iter", ->
-	processAsyncChain = (chain, processor, cb) ->
-		ret = {}
+	imp("utils")
 
+	processAsyncChain = (chain, processor, cb) ->
+		ret = []
+		total = chain.length
+		utils.safeCall(cb, ret) unless total
 		for idx,c in chain
+			((idx,c) ->
+				cCb = (type, data) ->
+					ret[idx] = {
+						"type": type,
+						"data": data
+					}
+					total -= 1
+					unless total
+						utils.safeCall(cb, ret)
+
+				processor(c, cCb)
+
+			)(idx,c)
+
+	processOrderedChain = (chain, processor, cb) ->
+		ret = []
+		idx = 0
+		end = chain.length
+		utils.safeCall(cb, ret) if idx == end
+
+		iterator = () ->
 			((c) ->
-			)()
+				cCb = (type, data) ->
+					ret[idx] = {
+						"type": type,
+						"data": data
+					}
+
+					idx += 1
+					if idx == end
+						utils.safeCall(cb, ret)
+					else
+						iterator()
+
+				processor(c, cCb) if c
+			)(chain[idx])
+
+		iterator()
+
+
+
+	exp(
+		"processAsyncChain": processAsyncChain
+		"processOrderedChain": processOrderedChain
+	)
 )
 
 ajax = new Module(app, "ajax", ->
@@ -180,17 +255,34 @@ ajax = new Module(app, "ajax", ->
 	})
 )
 
-core = new Module(app, "core", ->
+app.do(->
 	imp("ajax", ["J"])
+	imp("utils as U")
+	imp("types as T")
 
-	Module.fromURL = (app, name, url, exports) ->
+	Module.fromURL = (app, name, url, imports=[], exports=[]) ->
 		code = J(url).responseText
 
+		for imp in imports
+			if T.isArray(imp)
+				moduleName = imp[0]
+				vars = imp[1]
+				vars = [vars] unless T.isArray(vars)
+			else
+				moduleName = imp
+
+			impStr = "imp(#{[U.repr(moduleName), U.repr(vars)].joine()});\n"
+			code = impStr + code
 		module = new Module(app, name, code)
 		module.Builtins.exp(exports)
 
 		return module
+)
 
+rqs = new Module(app, "rqs", ->
+	imp("utils as U")
+	imp("types as T")
+	imp("iter as I")
 
 	class Requirement
 		constructor: (@name) ->
@@ -201,20 +293,61 @@ core = new Module(app, "core", ->
 
 	class ModuleProvider extends Provider
 		provide: (req, cb) ->
-			meta = @Meta(req.name)
+			self = this
+			meta = @Meta[req.name]
 
 			return cb(0, "No meta for req.name") unless meta
 
-			deps = meta.deps(req) || []
+			deps = U.safeCall(meta.deps, req) || []
+
+			I.processOrderedChain(
+				deps
+				(dReq, pCb) ->
+					self.provide(
+						dReq
+						(rType, data) ->
+							U.safeCall(pCb, rType, data)
+					)
+
+				(modulesInfo) ->
+					url = meta.url
+					module = Module.fromURL(app, req.name, meta.url, meta.imports, meta.exports)
+					U.safeCall(cb, module)
+			)
 
 
-
-
-
+	exp(
+		"Requirement": Requirement
+		"ModuleProvider": ModuleProvider
+	)
 )
 
-jq = Module.fromURL(app, "jQuery", "/js/jquery-1.9.1.min.js", ["jQuery"])
+
+app.do(->
+	imp("rqs as R")
+	mqj = new R.ModuleProvider("jq"
+	"jQuery":
+		"url": "/js/jquery-1.9.1.min.js"
+		"exports": ["jQuery"]
+
+	"jQueryUI":
+		"url": "/js/jquery-ui.js"
+		"deps": () -> [new R.Requirement("jQuery")]
+		"imports": [
+			["jQuery", "jQuery"]
+		]
+		"exports": ["jQuery"]
+	)
+
+	mqj.provide(
+		new R.Requirement("jQueryUI")
+		(module) ->
+			$ = module.Exports.jQuery
+			$(->
+				$("<div>oO</div>").dialog()
+			)
+	)
+)
+
 window.app = app
-
-
 ##########################################################################
