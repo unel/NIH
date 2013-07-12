@@ -322,7 +322,10 @@ rqs = new Module(app, "rqs", ->
 			self = this
 			meta = @Meta[req.name]
 
-			return U.safeCall(cb, 0, "No meta for #{req.name}") unless meta
+			success = (module) -> U.safeCall(cb, 1, module)
+			fail    = (msg)    -> U.safeCall(cb, 0, msg)
+
+			return fail("No meta for #{req.name}") unless meta
 
 			deps = U.safeCall(meta.deps, req) || []
 
@@ -331,14 +334,13 @@ rqs = new Module(app, "rqs", ->
 				(dReq, pCb) ->
 					self.provide(
 						dReq
-						(rType, data) ->
-							U.safeCall(pCb, rType, data)
+						(rType, data) -> U.safeCall(pCb, rType, data)
 					)
 
 				(modulesInfo) ->
-					url = meta.url
-					module = Module.fromURL(app, req.name, meta.url, meta.imports, meta.exports)
-					U.safeCall(cb, 1, module)
+					success(Module.fromURL(
+						app, req.name, meta.url, meta.imports, meta.exports
+					))
 			)
 
 	class TagBasedProvider extends Provider
