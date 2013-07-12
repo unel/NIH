@@ -129,7 +129,15 @@ utils = new Module(app, "utils", ->
 	imp("types as T")
 
 	safeCallCtx = (f, ctx, args...) -> f.apply(ctx, args) if T.isFunction(f)
-	safeCall = (f, args...) -> f.apply(window, args) if T.isFunction(f)
+
+	safeCall = (f, args...) ->
+		if T.isArray(f)
+			safeCall(fi, args) for fi in f
+
+		else if T.isFunction(f)
+			return f.apply(window, args)
+
+
 	safeApply = (f, args) -> f.apply(window, args) if T.isFunction(f)
 	repr = JSON.stringify
 
@@ -156,9 +164,11 @@ utils = new Module(app, "utils", ->
 
 		return ret
 
+
 	exp(
 		"repr": repr
 		"safeCall": safeCall
+		"pick": (key) -> (obj) -> obj[key]
 	)
 )
 
@@ -209,11 +219,12 @@ iter = new Module(app, "iter", ->
 
 		iterator()
 
-
+	map = (list, f) -> ret = f(item) for item in list
 
 	exp(
 		"processAsyncChain": processAsyncChain
 		"processOrderedChain": processOrderedChain
+		"map": map
 	)
 )
 
@@ -235,17 +246,10 @@ ajax = new Module(app, "ajax", ->
 			"4/200":  [options.onSuccess, options.onFinish]
 			"4/else": [options.onError,   options.onFinish]
 
-
 		XHR.onreadystatechange = ->
-			cbs = cbsByState[XHR.readyState] \
-			   || cbsByState[XHR.readyState+"/"+XHR.status] \
-			   || cbsByState[XHR.readyState+"/else"]
-
-			if T.isArray(cbs)
-				U.safeCall(cb, XHR) for cb in cbs
-
-			else
-				U.safeCall(cbs, XHR)
+			U.safeCall([cbsByState[XHR.readyState],
+						cbsByState[XHR.readyState+"/"+XHR.status] ||
+						cbsByState[XHR.readyState+"/else"]])
 
 		XHR.send(options.data || null)
 		return XHR
@@ -323,31 +327,47 @@ rqs = new Module(app, "rqs", ->
 )
 
 
+# app.do(->
+# 	imp("rqs as R")
+# 	mqj = new R.ModuleProvider("jq"
+# 	"jQuery":
+# 		"url": "/js/jquery-1.9.1.min.js"
+# 		"exports": ["jQuery"]
+
+# 	"jQueryUI":
+# 		"url": "/js/jquery-ui.js"
+# 		"deps": () -> [new R.Requirement("jQuery")]
+# 		"imports": [
+# 			["jQuery", "jQuery"]
+# 		]
+# 		"exports": ["jQuery"]
+# 	)
+
+# 	mqj.provide(
+# 		new R.Requirement("jQueryUI")
+# 		(module) ->
+# 			$ = module.Exports.jQuery
+# 			$(->
+# 				$("<div>oO</div>").dialog()
+# 			)
+# 	)
+# )
+
 app.do(->
-	imp("rqs as R")
-	mqj = new R.ModuleProvider("jq"
-	"jQuery":
-		"url": "/js/jquery-1.9.1.min.js"
-		"exports": ["jQuery"]
+	imp("ajax", ["J"])
 
-	"jQueryUI":
-		"url": "/js/jquery-ui.js"
-		"deps": () -> [new R.Requirement("jQuery")]
-		"imports": [
-			["jQuery", "jQuery"]
+	J("/js/jquery-ui.js", {
+		"onSuccess": [
+			-> alert("ook!")
+			-> alert("rly?")
 		]
-		"exports": ["jQuery"]
+		"onError": [
+			-> alert("nnooo")
+		]
+		"onDataLoad": -> alert('load')
+		"onFinish": -> alert("f")
+	})
 	)
-
-	mqj.provide(
-		new R.Requirement("jQueryUI")
-		(module) ->
-			$ = module.Exports.jQuery
-			$(->
-				$("<div>oO</div>").dialog()
-			)
-	)
-)
 
 window.app = app
 ##########################################################################
