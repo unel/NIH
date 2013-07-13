@@ -1,3 +1,4 @@
+WND = this
 class App
 	constructor: (@name) ->
 		@Modules = {}
@@ -47,7 +48,7 @@ class Module
 				else
 					self.Exports[vars] = varValue
 		}
-		@window = window
+		@window = WND
 
 		@do(init)
 
@@ -85,8 +86,8 @@ types = new Module(app, "types", ->
 
 		t = getType(t) unless typeof(t) is "string"
 
-		if !res && window[t]
-			res = obj instanceof window[t]
+		if !res && WND[t]
+			res = obj instanceof WND[t]
 
 		if !res && customs[t]
 			res = obj instanceof customs[t]
@@ -134,10 +135,10 @@ utils = new Module(app, "utils", ->
 			safeCall(fi, args) for fi in f
 
 		else if T.isFunction(f)
-			return f.apply(window, args)
+			return f.apply(WND, args)
 
 
-	safeApply = (f, args) -> f.apply(window, args) if T.isFunction(f)
+	safeApply = (f, args) -> f.apply(WND, args) if T.isFunction(f)
 	repr = JSON.stringify
 
 	Array.prototype.joine = (separator=', ') ->
@@ -281,6 +282,19 @@ ajax = new Module(app, "ajax", ->
 	)
 )
 
+workers = new Module(app, "workers", ->
+	class TWorker
+		constructor: (@url) ->
+
+	class EWorker
+		constructor: (@name,  @options={}) ->
+			@worker = new (WND.Worker || TWorker)("/js/nih/worker.js")
+
+	exp({
+		"Worker": EWorker
+	})
+)
+
 app.do(->
 	imp("ajax", ["J"])
 	imp("utils as U")
@@ -390,77 +404,5 @@ rqs = new Module(app, "rqs", ->
 	)
 )
 
-# TESTING: ModuleProvider
-# app.do(->
-# 	imp("rqs as R")
-# 	mqj = new R.ModuleProvider("jq"
-# 	"jQuery":
-# 		"url": "/js/jquery-1.9.1.min.js"
-# 		"exports": ["jQuery"]
-
-# 	"jQueryUI":
-# 		"url": "/js/jquery-ui.js"
-# 		"deps": -> [new R.Requirement("jQuery")]
-# 		"imports": [
-# 			["jQuery", "jQuery"]
-# 		]
-# 		"exports": ["jQuery"]
-# 	)
-
-# 	mqj.provide(
-# 		new R.Requirement("jQueryUI")
-# 		(r, module) ->
-# 			$ = module.Exports.jQuery
-# 			$(->
-# 				$("<div>oO</div>").dialog()
-# 			)
-# 	)
-# )
-
-# TESTING: TagBasedProviders
-app.do(->
-	imp("rqs as R")
-	images = new R.ImageProvider("xxx"
-		"torvalds":
-			"url": "/img/nakedass.png"
-	)
-	styles = new R.StyleProvider("xxx"
-		"jQuery":
-			"url": "/css/jquery-ui-1.10.3.custom.css"
-			"deps": -> [
-				new R.Requirement("jQuery-images")
-			]
-	)
-
-	styles.provide(
-		new R.Requirement("jQuery")
-		(r, style) ->
-			debugger
-	)
-
-	images.provide(
-		new R.Requirement("torvalds")
-		(r, img) ->
-			document.getElementsByTagName('body')[0].appendChild(img)
-	)
-)
-
-# TESTING: ajax.J callbacks
-# app.do(->
-# 	imp("ajax", ["J"])
-
-# 	J("/js/jquery-ui.js", {
-# 		"onSuccess": [
-# 			-> alert("ook!")
-# 			-> alert("rly?")
-# 		]
-# 		"onError": [
-# 			-> alert("nnooo")
-# 		]
-# 		"onDataLoad": -> alert('load')
-# 		"onFinish": -> alert("f")
-# 	})
-# )
-
-window.app = app
+WND.app = app
 ##########################################################################
