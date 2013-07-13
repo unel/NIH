@@ -289,6 +289,21 @@ workers = new Module(app, "workers", ->
 	class EWorker
 		constructor: (@name,  @options={}) ->
 			@worker = new (WND.Worker || TWorker)("/js/nih/worker.js")
+			@worker.onmessage = (e) =>
+				[msg, data] = [e.msg, e.data]
+				@process(msg, data)
+
+			@worker.onerror = (e) =>
+				debugger
+
+		msg: (title, data) ->
+			@worker.postMessage({
+				"msg": title
+				"data": data
+			})
+
+		process: (msg, data) ->
+			console.log("message", msg, data)
 
 	exp({
 		"Worker": EWorker

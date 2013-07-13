@@ -74,5 +74,5 @@ app = window.app
 # TESTING: workers
 app.do(->
 	imp("workers", ["Worker as W"])
-	w = new W("zoom")
+	window.app.w = new W("zoom")
 )
